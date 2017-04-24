@@ -42,22 +42,43 @@
 		[:a.link-thick:hover
 		 :a.link-thick:active {:background-color :green}]
 		[:a.link-head:link
-		 :a.link-head:visited (assoc (mk-lnk 8 16 4 2 36 2) :width (u/px 250))]
+		 :a.link-head:visited (mk-lnk 8 16 4 2 24 2)]
 		[:a.link-head:hover
 		 :a.link-head:active {:background-color :green}]
 		[:a.link-home:link
-		 :a.link-home:visited (assoc (mk-lnk 8 16 4 2 36 2) :width (u/percent 90))]
+		 :a.link-home:visited (mk-lnk 8 16 4 2 24 2)]
 		[:a.link-home:hover
 		 :a.link-home:active {:background-color :green}]
-		[:.button (assoc (mk-lnk 8 16 4 2 36 2) :width (u/px 250))]
+		[:.button (mk-lnk 8 16 4 2 24 2)]
 		[:.button:hover {:background-color :green}]
-    		))
+    	[:input {:font-size line-size :width full}]
+    	[:select {:font-size line-size}]
+    	[:.cb {:transform "scale(2)"}]
+    	[:.rafield {:text-align :right}]
+    	[:.tafield {:vertical-align :text-top}]
+    	[:.udpad {:padding [[(u/px 8) 0 (u/px 8) 0]]}]
+    	[:.rpad {:padding [[0 (u/px 18) 0 0]]}]
+		[:.tbl-brdr {:border-left [[(u/px 1) :grey :solid]]
+			         :border-top [[(u/px 1) :grey :solid]]
+			         :border-right [[(u/px 1) :grey :solid]]}]
+		[:.tbl-brdr1 {:border-left [[(u/px 1) :grey :solid]]
+			         :border-right [[(u/px 1) :grey :solid]]}]
+		[:.tbl-co {:border-collapse :collapse}]
+		[:.txtcol {:width (u/px 500)}]
+		[:.ncol {:width (u/px 300)}]
+		[:.acol {:width (u/px 400)}]
+		[:.ccol {:word-wrap :break-word :width (u/px 250)}]
+		[:.dcol {:width (u/px 100)}]
+		[:.ddcol {:width (u/px 150)}]
+		[:.brdr {:border [[(u/px 1) :grey :solid]]}]
+		[:.brdrcol {:border-collapse :collapse}]
+		))
 
 (def css-html
 	(g/css
 		[:html {
 			;:background (color/linear-gradient [(color/as-rgb 32) (color/as-rgb 64)])
-			:background "linear-gradient(rgb(32, 32, 32), rgb(64, 64, 64))"
+			:background (color/rgb 32 32 32)
 			:background-size :contain}]
 		[:body {
 			:font-family ["HelveticaNeue" "Helvetica Neue" "Helvetica" "Arial" "sans-serif"]
@@ -67,12 +88,8 @@
 	        ;:-webkit-text-size-adjust :none
 			}]
 		[:.app-div {
-			:width  full
-			:height (u/px 1080)}
-			(ss/at-media {:screen true :min-width (u/px 480)}
-				[:& {
-					:width  (u/px 1000)
-					:height (u/px 1080)}])]
+			:width  full}
+			(ss/at-media {:screen true :min-width (u/px 480)})]
 		[:.master-table {
 			:width full}]))
 

@@ -24,7 +24,7 @@
 (s/def :fiber/name           :fiber/valid-string)
 (s/def :fiber/note           string?)
 (s/def :fiber/year           :fiber/valid-year)
-(s/def :fiber/months         (s/and set? #(set/superset? config/every-month %)))
+(s/def :fiber/months         (s/int-in 0 4095))
 
 ;;-----------------------------------------------------------------------------
 ;; contact
@@ -72,7 +72,6 @@
 											   :fiber/amount
 											   :fiber/tax
 											   :fiber/type
-											   :fiber/id
 											   :fiber/year
 											   :fiber/months]))
 

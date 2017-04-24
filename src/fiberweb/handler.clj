@@ -18,7 +18,7 @@
 	(-> routes
 		(rmr/wrap-reload)
 		(rmst/wrap-stacktrace)
-		(rmd/wrap-defaults rmd/site-defaults)))
+		(rmd/wrap-defaults (assoc-in rmd/site-defaults [:security :anti-forgery] false))))
 
 (defn start
 	[port]
