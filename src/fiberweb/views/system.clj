@@ -1,5 +1,6 @@
 (ns fiberweb.views.system
-  	(:require 	(fiberweb 		[db         :as db])
+  	(:require 	(fiberweb 		[db         :as db]
+  								[utils      :as utils])
   				(fiberweb.views [layout     :as layout]
             					[common     :as common])
  	          	(garden 		[core       :as g]
@@ -22,6 +23,7 @@
             	(taoensso 		[timbre     :as timbre])
             	(clojure.java 	[io         :as io])
             	(clojure 		[string     :as str]
+            					[spec       :as s]
             					[set        :as set])))
 
 ;;-----------------------------------------------------------------------------
@@ -30,12 +32,70 @@
 	[q]
 	(nth [2r111111111111 2r111000000000 2r000111000000 2r000000111000 2r000000000111] q))
 
+(defn bit->month
+	[b]
+	(cond
+		(not (zero? (bit-and 2r100000000000 b))) 1
+		(not (zero? (bit-and 2r010000000000 b))) 2
+		(not (zero? (bit-and 2r001000000000 b))) 3
+		(not (zero? (bit-and 2r000100000000 b))) 4
+		(not (zero? (bit-and 2r000010000000 b))) 5
+		(not (zero? (bit-and 2r000001000000 b))) 6
+		(not (zero? (bit-and 2r000000100000 b))) 7
+		(not (zero? (bit-and 2r000000010000 b))) 8
+		(not (zero? (bit-and 2r000000001000 b))) 9
+		(not (zero? (bit-and 2r000000000100 b))) 10
+		(not (zero? (bit-and 2r000000000010 b))) 11
+		(not (zero? (bit-and 2r000000000001 b))) 12
+		:else (throw (ex-info (str "Invalid months: " b) {:cause :invalid-months}))))
+(s/fdef bit->month
+	:args (s/int-in 0 4096)
+	:ret  (s/int-in 1 13))
+
+(defn month->bit
+	[m]
+	(unsigned-bit-shift-right 2r1000000000000 m))
+(s/fdef month->bit
+	:args (s/int-in 1 13)
+	:ret  integer?)
+
+(defn bits->months
+	[bits qmonths]
+	(prn "bits->months:" bits qmonths)
+	(for [m (range 1 13)
+		:let [mb (month->bit m)]
+		:when (not (zero? (bit-and bits mb qmonths)))]
+		m))
+(s/fdef bits->months
+	:args (s/cat :bits integer? :qmonths integer?)
+	:ret  (s/* integer?))
+
 (defn mk-tag
 	[id idx]
 	(keyword (str "tag-" id "-" idx)))
 
+(defn get-mf-dc
+	[mid year]
+	(some->> (db/get-memberdcs mid)
+			 (filter #(= (:type %) "membership-fee"))
+			 (filter #(= (:year %) year))))
+
+(defn update-membership-fees
+	[year]
+	(let [members     (db/get-members year)
+		  members-dcs (map #(assoc % :dc (get-mf-dc (:memberid %) year)) members)
+		  members-owe (filter #(empty? (:dc %)) members-dcs)
+		  config      (db/get-config-at year)]
+		(doseq [member members-owe]
+			(db/add-memberdc {:amount (:membershipfee config)
+							  :tax    (:membershiptax config)
+							  :type   "membership-fee"
+							  :year   year
+							  :memberid (:memberid member)}))))
+
 (defn invoice-membership
 	[year]
+	(update-membership-fees year)
 	(layout/common (str "Medlemsavgifter " year) []
 		(hf/form-to
 			[:post "/invoice/membership"]
@@ -65,8 +125,75 @@
 				[:td.rafield.tafield {:width 100} (hf/label :xx (:total x))]
 				]) (db/get-membership-data year))]))
 
+(defn mk-months-upto
+	[quarter]
+	(if (zero? quarter)
+		0
+		(+ (q->b quarter) (mk-months-upto (dec quarter)))))
+(s/fdef mk-months-upto
+	:args (s/int-in 1 5)
+	:ret  (s/int-in 2r111000000000 2r111111111111))
+
+(defn get-edcs
+	[id year qmonths dc-type]
+	(->> (db/get-estatedcs id)
+		 (filter #(and (= (:year %) year)
+					   (= (:type %) dc-type)
+				       (not (zero? (bit-and (:months %) qmonths)))))
+		 (map #(bit->month (:months %)))))
+(s/fdef get-edcs
+	:args (s/cat :id :fiber/id :year :fiber/valid-year :quarter (s/int-in 1 5) :dc-type string?)
+	:ret  (s/* (s/int-in 1 13)))
+
+(defn update-estate-q-fixed
+	[year quarter yearly?]
+	(let [eids   (->> (db/get-estatebi-year year)
+					  (filter #(= (:bimonths %) (if yearly? 12 3)))
+					  (map :estateid))
+		  qmonths (mk-months-upto quarter)
+	      efees  (map (fn [id] {:id id :dcs (get-edcs id year qmonths "connection-fee")}) eids)
+	      eowe   (remove #(= (count (:dcs %)) (* quarter 3)) efees)
+	      config (db/get-config-at year)]
+        (doseq [e eowe]
+        	(doseq [m (range 1 13)
+        		:when (not (some #{m} (set (:dcs e))))]
+        		(db/add-estatedc {:amount   (:connectionfee config)
+        						  :tax      (:connectionfee config)
+        						  :type     "connection-fee"
+        						  :year     year
+        						  :months   (month->bit m)
+        						  :estateid (:id e)})))))
+
+(defn update-estate-q-activity
+	[year quarter yearly?]
+	(let [eids   (->> (db/get-estatebi-year year)
+					  (filter #(= (:bimonths %) (if yearly? 12 3)))
+					  (map :estateid))
+	      qmonths (mk-months-upto quarter)
+	      efees  (map (fn [id] {:id   id
+	      						:dcs  (get-edcs id year qmonths "operator-fee")
+	      						:acts (bits->months (db/get-activities-for year id) qmonths)}) eids)
+	      eowe   (remove #(= (count (:dcs %)) (count (:acts %))) efees)
+	      config (db/get-config-at year)]
+        (doseq [e eowe]
+        	(doseq [m (range 1 13)
+        		:when (and (not (some #{m} (set (:dcs e))))
+        				   (some #{m} (set (:acts e))))]
+        		(db/add-estatedc {:amount   (:operatorfee config)
+        						  :tax      (:operatorfee config)
+        						  :type     "operator-fee"
+        						  :year     year
+        						  :months   (month->bit m)
+        						  :estateid (:id e)})))))
+
+(defn update-estates-quarter
+	[year quarter]
+	(update-estate-q-fixed year quarter false)
+	(update-estate-q-activity year quarter false))
+
 (defn invoice-quarter
 	[year quarter]
+	(update-estates-quarter year quarter)
 	(layout/common (str "Användningsavgifter " year " Q" quarter) []
 		(hf/form-to
 			[:post "/invoice/quarter"]
@@ -112,8 +239,14 @@
 				[:td.rafield.tafield {:width 100} (hf/label :xx (:total x))]
 				]) (db/get-usage-data year (q->b quarter) 3))]))
 
+(defn update-estates-yearly
+	[year]
+	(update-estate-q-fixed year 4 true)
+	(update-estate-q-activity year 4 true))
+
 (defn invoice-yearly
 	[year]
+	(update-estates-yearly year)
 	(layout/common (str "Användningsavgifter " year) []
 		(hf/form-to
 			[:post "/invoice/yearly"]
@@ -126,7 +259,7 @@
 				[:tr [:td {:height 5}]]
 				[:tr
 					[:td (hf/label :xx "För år")]
-					[:td (hf/drop-down :newyear (range 2010 2020) year)]
+					[:td (hf/drop-down :newyear (range 2013 2030) year)]
 					[:td (hf/submit-button {:class "button1 button"} "Updatera")]]
 				[:tr [:td {:height 10}]]])
 		[:table {:border 1 :color :grey}
@@ -304,8 +437,8 @@
 				[:tr [:td {:height 40}]]
 				[:tr
 					[:td.txtcol (hf/label :xx "Gäller från")]
-					[:td.valcol (hf/drop-down :fromyear (range 2017 2031) (common/current-year))]
-					[:td.valcol (hf/drop-down :frommonth (range 1 13) (common/current-month))]]
+					[:td.valcol (hf/drop-down :fromyear (range 2017 2031) (utils/current-year))]
+					[:td.valcol (hf/drop-down :frommonth (range 1 13) (utils/current-month))]]
 				[:tr [:td {:height 40}]]
 				[:tr
 					[:td {:colspan 3} (hf/submit-button {:class "button1 button"} "Lägg till konfiguration")]]])))
@@ -318,7 +451,7 @@
 		  			:connectiontax (/ (BigDecimal. (:connection-tax params)) 100M)
 		  			:operatorfee   (BigDecimal.    (:operator-fee params))
 		  			:operatortax   (/ (BigDecimal. (:operator-tax params)) 100M)
-		  			:fromyear      (common/ym->f (:fromyear params) (:frommonth params))}))
+		  			:fromyear      (utils/ym->f (:fromyear params) (:frommonth params))}))
 
 (defn get-c
 	[x i]
@@ -363,8 +496,8 @@
 				[:tr
 				[:td.rafield.rpad.brdr (hf/label :xx (:memberid x))]
 				[:td.txtcol.brdr (hf/label {:class "txtcol"} :xx (:name x))]
-				[:td.dcol.brdr (hf/label :xx (str (common/get-year (:fromyear x)) "-"
-					                    (common/get-month (:fromyear x))))]
+				[:td.dcol.brdr (hf/label :xx (str (utils/get-year (:fromyear x)) "-"
+					                    (utils/get-month (:fromyear x))))]
 				[:td.brdr.ccol (hf/label :xx (get-c x 0))]
 				[:td.brdr.ccol (hf/label :xx (get-c x 1))]
 				[:td.brdr (hf/label :xx (:note x))]]) (db/get-member-cont))
@@ -375,14 +508,14 @@
 	[]
 	(vec (map (fn [m]
 		[(str (:memberid m))
-		 (str (common/get-year (:m-fromyear m)) "-" (common/get-month (:m-fromyear m)))
+		 (str (utils/get-year (:m-fromyear m)) "-" (utils/get-month (:m-fromyear m)))
 		 (:name m)
 		 (:contact m)
 		 (str (:estateid m))
 		 (:location m)
 		 (:address m)
 		 (str (:bimonths m))
-		 (str (common/get-year (:e-fromyear m)) "-" (common/get-month (:e-fromyear m)))
+		 (str (utils/get-year (:e-fromyear m)) "-" (utils/get-month (:e-fromyear m)))
 		 ]) (db/get-all))))
 
 (defn list-all
@@ -409,16 +542,16 @@
 			(map (fn [x]
 				[:tr
 				[:td.rafield.rpad.brdr (hf/label :xx (:memberid x))]
-				[:td.dcol.brdr (hf/label :xx (str (common/get-year (:m_fromyear x)) "-"
-					                    (common/get-month (:m_fromyear x))))]
+				[:td.dcol.brdr (hf/label :xx (str (utils/get-year (:m_fromyear x)) "-"
+					                    (utils/get-month (:m_fromyear x))))]
 				[:td.txtcol.brdr (hf/label :xx (:name x))]
 				[:td.brdr.ccol (hf/label :xx (:contact x))]
 				[:td.rafield.rpad.brdr (hf/label :xx (:estateid x))]
 				[:td.txtcol.brdr (hf/label :xx (:location x))]
 				[:td.txtcol.brdr (hf/label :xx (:address x))]
 				[:td.rafield.rpad.brdr (hf/label :xx (:bimonths x))]
-				[:td.dcol.brdr (hf/label :xx (str (common/get-year (:e_fromyear x)) "-"
-					                    (common/get-month (:e_fromyear x))))]
+				[:td.dcol.brdr (hf/label :xx (str (utils/get-year (:e_fromyear x)) "-"
+					                    (utils/get-month (:e_fromyear x))))]
 				]) (db/get-all))
 				]))
 
@@ -434,8 +567,8 @@
 		  loc-width 12
 		  fsize 10]
 		(pdf/pdf [
-		  	{:title (str "Full lista. Utskriven " (common/now-str))
-		     :header (str "Full lista. Utskriven " (common/now-str))
+		  	{:title (str "Full lista. Utskriven " (utils/now-str))
+		     :header (str "Full lista. Utskriven " (utils/now-str))
 		     :pages true
 		    }
 		    (into [:table
@@ -463,7 +596,7 @@
 	[]
 	(vec (map (fn [m]
 		[(str (:memberid m)) (:name m)
-		 (str (common/get-year (:fromyear m)) "-" (common/get-month (:fromyear m)))
+		 (str (utils/get-year (:fromyear m)) "-" (utils/get-month (:fromyear m)))
 		 (get-c m 0) (get-c m 1) (get-c m 2) (get-c m 3)
 		 (:note m)]) (db/get-member-cont))))
 
@@ -475,8 +608,8 @@
 (defn export-members-pdf
 	[]
 	(pdf/pdf [
-	  	{:title (format "Medlemslista. Utskriven %s" (common/now-str))
-	     :header (format "Medlemslista. Utskriven %s" (common/now-str))
+	  	{:title (format "Medlemslista. Utskriven %s" (utils/now-str))
+	     :header (format "Medlemslista. Utskriven %s" (utils/now-str))
 	     :pages true
 	    }
 	    (into [:table

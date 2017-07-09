@@ -71,7 +71,7 @@
 (defn home-page
 	[]
 	(layout/common "Myrhult-Bålerud Fiber förening" [css-home-tree]
-		[:p "Fiber"]
+		[:p (str "Fiber - Medlemmar: " (db/member-count) " Fastigheter: " (db/estate-count))]
 		[:ul.tree
 			[:li "System"
 				[:ul
@@ -81,7 +81,8 @@
 					[:li [:a.link-thick {:href "/enter-payments"} "Bokför inbetalningar"]]
 					[:li [:a.link-thick {:href "/config"} "Konfigurera"]]
 					[:li [:a.link-thick {:href "/list-members"} "Se medlemslistan"]]
-					[:li [:a.link-thick {:href "/list-all"} "Se hela listan"]]]]
+					[:li [:a.link-thick {:href "/list-all"} "Se hela listan"]]
+					[:li [:a.link-thick {:href "/exit"} "Stäng av webserver"]]]]
 			[:li "Medlemmar"
 				[:ul
 					[:li [:a.link-thick {:href "/new-member"} "Ny medlem"]]

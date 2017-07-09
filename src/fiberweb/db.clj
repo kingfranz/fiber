@@ -15,8 +15,8 @@
             					[page       :as hp]
             					[util       :as hu])
             	(taoensso 		[timbre     :as timbre])
-            	(fiberweb.views [common     :as common])
-            	(fiberweb		[spec       :as spec])
+            	(fiberweb		[spec       :as spec]
+            					[utils      :as utils])
             	(clojure.java 	[jdbc       :as j])
             	(clojure 		[string     :as str]
             					[set        :as set]
@@ -24,15 +24,22 @@
 
 ;;-----------------------------------------------------------------------------
 
-(defonce fiberdb {
+(defonce fiberdb* {
 	:classname   "com.mysql.cj.jdbc.Driver"
-	:host        "diskstation.soahojen"
+	:host        "192.168.0.42"
     :port        3306
     :dbtype      "mysql"
-    ;:subprotocol "mysql"
-    ;:subname "//192.168.0.42:3306/fiberdb"
     :dbname      "fiberdb?serverTimezone=CAT"
     :user        "sa"
+    :password    "wiggins"})
+
+(defonce fiberdb {
+	:classname   "com.mysql.cj.jdbc.Driver"
+	:host        "127.0.0.1"
+    :port        3306
+    :dbtype      "mysql"
+    :dbname      "fiberdb?serverTimezone=CAT"
+    :user        "root"
     :password    "wiggins"})
 
 ;;-----------------------------------------------------------------------------
@@ -53,36 +60,31 @@
 
 (defn member-count
 	[]
-	(j/query fiberdb
-  		["select count(*)
-  		  from fiberdb.members"]))
+	(:count (first (j/query fiberdb
+  		["select count(*) as count
+  		  from fiberdb.members
+  		  where toyear is NULL"]))))
 
 (defn estate-count
 	[]
-	(j/query fiberdb
-  		["select count(*)
-  		  from fiberdb.estates"]))
+	(:count (first (j/query fiberdb
+  		["select count(*) as count
+  		  from fiberdb.estates
+  		  where toyear is NULL"]))))
 
 (defn add-estate
-	[id location address note fromyear bimonths]
-	(if (estateid-exists? id)
+	[estate bimonths]
+	(when (estateid-exists? (:estateid estate))
 		(throw (Exception. "duplicate estate ID")))
-	(if (str/blank? location)
-		(throw (Exception. "empty location")))
-	(if (str/blank? address)
-		(throw (Exception. "empty address")))
-	(if (or (< fromyear 2013) (> fromyear 2030))
-		(throw (Exception. "invalid year")))
-	(if (and (not= bimonths 3) (not= bimonths 12))
-		(throw (Exception. "invalid billing interval")))
 	(j/with-db-transaction [db-conn fiberdb]
-		(j/insert! db-conn :estates {
-			:estateid id :location location
-			:address address :note note
-			:fromyear fromyear})
-		(doseq [year (range (common/current-year) 2031)]
+		(j/insert! db-conn :estates estate)
+		(doseq [year (range (utils/current-year) 2031)]
 			(j/insert! db-conn :estatebi {
-				:estateid id :year year :bimonths bimonths}))))
+				:estateid (:estateid estate)
+				:year     year
+				:bimonths bimonths}))))
+(s/fdef add-estate
+	:args (s/cat :estate :fiber/estate :bimonths :estate/bi-months))
 
 (defn insert-config
 	[config]
@@ -98,19 +100,39 @@
 	(j/update! fiberdb :estatebi
 		{:bimonths (if yearly? 12 3)} ["estateid = ? and year >= ?" eid from-year]))
 
+(s/fdef update-estatedc
+	:args :fiber/estate-dc-entry)
+
 (defn update-estatedc
 	[dc]
 	(j/update! fiberdb :estatedcs
 		dc ["estateid = ? and estatedcid = ?" (:estateid dc) (:estatedcid dc)]))
 
+(s/fdef add-estatedc
+	:args :fiber/estate-dc-entry)
+
+(defn add-estatedc
+	[dc]
+	(j/insert! fiberdb :estatedcs dc))
+
 (defn delete-estatedc
 	[eid dcid]
 	(j/delete! fiberdb :estatedcs ["estateid = ? and estatedcid = ?" eid dcid]))
+
+(s/fdef update-memberdc
+	:args :fiber/member-dc-entry)
 
 (defn update-memberdc
 	[dc]
 	(j/update! fiberdb :memberdcs
 		dc ["memberid = ? and memberdcid = ?" (:memberid dc) (:memberdcid dc)]))
+
+(s/fdef add-memberdc
+	:args :fiber/member-dc-entry)
+
+(defn add-memberdc
+	[dc]
+	(j/insert! fiberdb :memberdcs dc))
 
 (defn delete-memberdc
 	[mid dcid]
@@ -147,6 +169,12 @@
 		  from estates
 		  where estateid = ?" id])))
 
+(defn get-membersestates
+	[]
+	(j/query fiberdb
+		["select *
+		  from fiberdb.membersestates"]))
+
 (defn get-estates
 	([]
 	(j/query fiberdb
@@ -165,6 +193,19 @@
 		        me_fromyear <= ? and
 		        (me_toyear is NULL or me_toyear >= ?)" memberid year year])))
 
+(defn get-avail-estates
+	[]
+	(let [estates (get-estates)
+		  mes*    (get-membersestates)
+		  mes     (->> mes*
+		  			   (group-by :estateid)
+		  			   (map (fn [[k v]] [k (every? #(some? (:toyear %)) v)]))
+		  			   (filter #(true? (second %)))
+		  			   (map first)
+		  			   set)]
+		(concat (filter #(some #{(:estateid %)} mes) estates)
+				(remove #(some #{(:estateid %)} (set (map :estateid mes*))) estates))))
+
 (defn get-contacts
 	[memberid]
 	(j/query fiberdb
@@ -172,6 +213,9 @@
 		  from fiberdb.contacts
 		  where memberid = ?
 		  order by preferred DESC" memberid]))
+(s/fdef get-contacts
+	:args :fiber/id
+	:ret  (s/* :fiber/contact))
 
 (defn delete-contact
 	[contact]
@@ -199,6 +243,14 @@
 		  where memberid = ?
 		  order by date" memberid]))
 
+(defn get-memberdc
+	[memberid dcid]
+	(j/query fiberdb
+		["select *
+		  from fiberdb.memberdcs
+		  where memberid = ? and
+		        memberdcid = ?" memberid dcid]))
+
 (defn get-estatedcs
 	[estateid]
 	(j/query fiberdb
@@ -206,12 +258,27 @@
 		  from fiberdb.estatedcs
 		  where estateid = ?" estateid]))
 
+(defn get-estatedc
+	[estateid dcid]
+	(j/query fiberdb
+		["select *
+		  from fiberdb.estatedcs
+		  where estateid = ? and
+		        estatedcid = ?" estateid dcid]))
+
 (defn get-estatebi
 	[estateid]
 	(j/query fiberdb
 		["select *
 		  from fiberdb.estatebi
 		  where estateid = ?" estateid]))
+
+(defn get-estatebi-year
+	[year]
+	(j/query fiberdb
+		["select *
+		  from fiberdb.estatebi
+		  where year = ?" year]))
 
 (defn get-owners
 	[estate year]
@@ -278,6 +345,19 @@
 			    year = ?
 		  order by memberid" year year year]))
 
+(defn get-activities-for
+	[year eid]
+	(-> (j/query fiberdb
+			["select actmonths
+			  from fiberdb.estateact
+		 	  where year = ? and estateid = ?" year eid])
+		first
+		:actmonths
+		(or 0)))
+(s/fdef get-activities-for
+	:args (s/cat :year :fiber/valid-year :eid :fiber/id)
+	:ret  integer?)
+
 (defn get-acts
 	[year]
 	(j/query fiberdb
@@ -293,23 +373,29 @@
 	(j/update! fiberdb :estateact
 		{:actmonths actmonths}
 		["estateid = ? and year = ?" eid year]))
+(s/fdef update-activity
+	:args (s/cat :eid :fiber/estateid :year :fiber/valid-year :actmonths :fiber/months))
 
 (defn update-member-estate
 	[me]
 	(j/update! fiberdb :membersestates me
 		["memberid = ? and estateid = ?" (:memberid me) (:estateid me)]))
+(s/fdef update-member-estate
+	:args :fiber/me-entry)
 
 (defn insert-member-estate
 	[me]
 	(j/insert! fiberdb :membersestates me))
+(s/fdef insert-member-estate
+	:args :fiber/me-entry)
 
 (defn get-member-cont
 	[]
 	(->> (j/query fiberdb
-		["select memberid, name, fromyear, note
-		 from fiberdb.members
-		 where toyear is NULL"])
-		(map #(assoc % :contacts (get-contacts (:memberid %))))))
+			["select memberid, name, fromyear, note
+			  from fiberdb.members
+		 	  where toyear is NULL"])
+		 (map #(assoc % :contacts (get-contacts (:memberid %))))))
 
 (defn get-all
 	[]
@@ -317,12 +403,6 @@
 		["select *
 		  from fiberdb.current_full
 		  order by memberid"]))
-
-(defn nil-guard
-	[v x]
-	(if (nil? x)
-		v
-		x))
 
 (defn get-full
 	[year]
@@ -335,33 +415,29 @@
 			"select estateid, address, total, memberid
 			from fiberdb.estate_sums
 			where year = ?" year])]
-		 (->> (map (fn [member]
-		 		(assoc member :estates (filter #(= (:memberid %) (:memberid member)) estates)))
-		 		members)
-		 	(remove (fn [member] (and (>= (:total member) 0M)
-		 	                       (>= (reduce + (map :total (:estates member))) 0M)))))))
+		 (->> members
+		 	  (map (fn [member] (assoc member :estates (filter #(= (:memberid %) (:memberid member)) estates))))
+		 	  (remove (fn [member] (and (>= (:total member) 0M)
+		 	                            (>= (reduce + (map :total (:estates member))) 0M)))))))
 
 (defn add-member
-	[mid mname note fromyear eid contacts]
-	(if (memberid-exists? mid)
+	[member eid contacts]
+	(if (memberid-exists? (:memberid member))
 		(throw (Exception. "duplicate member ID")))
-	(if (str/blank? mname)
-		(throw (Exception. "empty name")))
-	(if (or (< fromyear 2013) (> fromyear 2030))
-		(throw (Exception. "invalid year")))
-	(if (not (estateid-exists? eid))
+	(if-not (estateid-exists? eid)
 		(throw (Exception. "unknown estate ID")))
 	(if (some? (get-owner eid))
 		(throw (Exception. "estate not available")))
-	(if (empty? contacts)
-		(throw (Exception. "no contacts")))
 	(j/with-db-transaction [db-conn fiberdb]
-		(j/insert! db-conn :members {
-			:memberid mid :name mname :note note :fromyear fromyear})
+		(j/insert! db-conn :members member)
 		(j/insert! db-conn :membersestates {
-			:memberid mid :estateid eid :fromyear fromyear})
+			:memberid (:memberid member)
+			:estateid eid
+			:fromyear (:fromyear member)})
 		(doseq [contact contacts]
 			(j/insert! db-conn :contacts contact))))
+(s/fdef add-member
+	:args (s/cat :member :fiber/member :eid :fiber/estateid :contacts (s/+ :fiber/contact)))
 
 ;;------------------------------------------------------------------------------------
 
@@ -377,7 +453,7 @@
 
 (defn add-estate-payment
 	[estateid amount year]
-	{:pre [(decimal? amount) (not= amount 0M) (s/valid? :fiber/valid-year (common/spy year))]}
+	{:pre [(decimal? amount) (not= amount 0M) (s/valid? :fiber/valid-year (utils/spy year))]}
 	(j/insert! fiberdb :estatedcs
 		{:amount amount
 		 :tax 0M

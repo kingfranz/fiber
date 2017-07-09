@@ -7,17 +7,23 @@
             	[ring.middleware.defaults    :as rmd]
             	[ring.middleware.reload      :as rmr]
             	[ring.middleware.stacktrace  :as rmst]
-            	[ring.adapter.jetty          :as ring]))
+            	[ring.adapter.jetty          :as ring]
+            	[clojure.spec                :as s]))
 
 (defroutes routes
 	fcr/routes
   	(route/resources "/")
   	(route/not-found (layout/four-oh-four)))
 
+(defn enable-asserts
+	[x]
+	(s/check-asserts true)
+	x)
+
 (def application
 	(-> routes
-		(rmr/wrap-reload)
-		(rmst/wrap-stacktrace)
+		enable-asserts
+		rmst/wrap-stacktrace
 		(rmd/wrap-defaults (assoc-in rmd/site-defaults [:security :anti-forgery] false))))
 
 (defn start
@@ -25,5 +31,7 @@
   	(ring/run-jetty application {:port port
                                  :join? false}))
 
-(defn -main []
-  	(start 3000))
+(defn -main
+	[]
+	(println "startar webservern på port 3210")
+  	(start 3210))

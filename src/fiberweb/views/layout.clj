@@ -101,6 +101,10 @@
 			[:meta {:http-equiv "X-UA-Compatible" :content "IE=edge,chrome=1"}]
 			[:meta {:name "viewport" :content "width=device-width, initial-scale=1, maximum-scale=1"}]
 			[:title title]
+			[:script "function toggleText(cb, t1, t2) {
+    			document.getElementById(t1).disabled = !document.getElementById(cb).checked;
+    			document.getElementById(t2).disabled = !document.getElementById(cb).checked;
+			}"]
 			[:style css-html]
 			[:style css-misc]
 			(map (fn [x] [:style x]) css)
