@@ -11,6 +11,7 @@
               					[home     :as home]
               					[members  :as members]
               					[estates  :as estates]
+              					[export   :as export]
               					[system   :as system])))
 
 ;;-----------------------------------------------------------------------------
@@ -64,20 +65,23 @@
 	    (ring/redirect "/"))
 
 	(cc/GET "/list-members" []
-	    (system/list-members))
+	    (export/list-members))
 	(cc/GET "/export-members-csv" []
-	    (system/export-members-csv)
+	    (export/export-members-csv)
 		(ring/redirect "/"))
 	(cc/GET "/export-members-pdf" []
-	    (system/export-members-pdf)
+	    (export/export-members-pdf)
 		(ring/redirect "/"))
 	(cc/GET "/list-all" []
-	    (system/list-all))
+	    (export/list-all))
 	(cc/GET "/export-all-csv" []
-	    (system/export-all-csv)
+	    (export/export-all-csv)
 		(ring/redirect "/"))
 	(cc/GET "/export-all-pdf" []
-	    (system/export-all-pdf)
+	    (export/export-all-pdf)
+		(ring/redirect "/"))
+	(cc/GET "/export-json" []
+	    (export/export-mongo)
 		(ring/redirect "/"))
 	(cc/GET "/export-json" []
 	    (system/export-json)

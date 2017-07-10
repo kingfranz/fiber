@@ -83,7 +83,7 @@
 					[:li [:a.link-thick {:href "/list-members"} "Se medlemslistan"]]
 					[:li [:a.link-thick {:href "/list-all"} "Se hela listan"]]
 					[:li [:a.link-thick {:href "/exit"} "Stäng av webserver"]]
-					[:li [:a.link-thick {:href "/export-json"} "Exportera JSON"]]
+					[:li [:a.link-thick {:href "/export-json"} "export"]]
 					]]
 			[:li "Medlemmar"
 				[:ul

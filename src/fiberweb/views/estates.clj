@@ -26,31 +26,28 @@
 
 ;;-----------------------------------------------------------------------------
 
-
-;;-----------------------------------------------------------------------------
-
 (defn update-estate
 	[{params :params}]
-	(j/with-db-transaction [db-conn db/fiberdb]
-		(db/update-estate {:estateid (:estateid params)
-						   :location (:location params)
-						   :address  (:address params)
-						   :note     (:note params)
-			               :fromyear (utils/ym->f (:fromyear params) (:frommonth params))
-			               :toyear   (when (some? (:endestate params))
-			               		(utils/ym->f (:toyear params) (:tomonth params)))})
-		(db/update-estatebi (:estateid params) (:biyear params) (:yearly params))))
+	(let [base (select-keys params [:_id :location :address :note])
+		  bis  (edn/read-string (:billing-intervals params))
+		  biy  (utils/param->int params :biyear)
+		  bi   (if (some? (:yearly params)) :yearly :quarterly)
+		  bisn (map #(if (>= (:year %) biy) (assoc % :bi-months bi) %) bis)
+		  ft   (common/extract-ft params (:_id params))]
+		(db/update-estate (assoc base :from-to ft
+					  				  :billing-intervals bisn))))
 
 ;;-----------------------------------------------------------------------------
 
 (defn edit-estate
 	[estateid]
 	(let [estate (db/get-estate estateid)
-		  owner  (db/get-owner estateid)]
+		  owner  (db/get-owner estate)]
 		(layout/common "Ändra en Fastighet" []
 		(hf/form-to
 			[:post "/update-estate"]
-			(hf/hidden-field :estateid estateid)
+			(hf/hidden-field :_id estateid)
+			(hf/hidden-field :billing-intervals (pr-str (:billing-intervals estate)))
 			[:table
 				[:tr
 					[:td [:a.link-head {:href "/"} "Home"]]
@@ -79,22 +76,25 @@
 					(common/mk-ft "Medlemskapet" estateid estate true)]]
 				[:tr [:td {:height 50}]]
 				[:tr [:td
-					(let [bis (db/get-estatebi estateid)
-						  current (:bimonths (first (filter #(= (:year %) (utils/current-year)) bis)))
-						  bi-s (fn [bi] (str (:year bi) " " (if (= (:bimonths bi) 12) "Helår" "Kvartal")))]
+					(let [current (->> (:billing-intervals estate)
+									   (filter #(= (:year %) (utils/current-year)))
+									   first
+									   :bi-months)
+						  bi-s (fn [bi] (str (:year bi) " " (name (:bi-months bi))))]
 						[:table
 							[:tr
 								[:th (hf/label :xx "Betalningsinterval")]]
-							(map (fn [bi]
-								[:tr [:td (hf/label :xx (bi-s bi))]])
-								(->> bis (filter #(< (:year %) (utils/current-year))) (sort-by :year)))
+							(map (fn [bi] [:tr [:td (hf/label :xx (bi-s bi))]])
+								(->> (:billing-intervals estate)
+									 (filter #(< (:year %) (utils/current-year)))
+									 (sort-by :year)))
 							[:tr
-								[:td (hf/drop-down :biyear (range 2013 2030) (utils/current-year))]
+								[:td (hf/drop-down :biyear (range (utils/current-year) 2030) (utils/current-year))]
 								[:td (hf/label :xx " och framåt, Helår")]
-								[:td {:width 50} (hf/check-box {:class "cb"} :yearly (= current 12))]]])]]
+								[:td {:width 50} (hf/check-box {:class "cb"} :yearly (= current :yearly))]]])]]
 				[:tr [:td {:height 40}]]
 				[:tr [:td
-					(common/mk-dc-section estateid (db/get-estatedcs estateid) false)]]]))))
+					(common/mk-dc-section estate)]]]))))
 
 ;;-----------------------------------------------------------------------------
 
@@ -143,13 +143,18 @@
 (defn create-estate
 	[{params :params}]
 	(db/add-estate {
-		:id       (:estateid params)
-		:location (:location params)
-		:address  (:address params)
-		:fromyear (utils/ym->f (:fromyear params) (:frommonth params))
-		:toyear   nil
-		:note     (:note params)}
-		(if (some? (:yearly params)) 12 3)))
+		:_id               (str "estate-" (:estateid params))
+		:location          (:location params)
+		:address           (:address params)
+		:from-to           {:from (t/date-time (utils/param->int params :fromyear)
+											   (utils/param->int params :frommonth))
+							:to nil}
+		:activities        nil
+		:billing-intervals (for [year (range (utils/current-year) (inc config/max-year))]
+								{:year year :bi-months (if (some? (:yearly params)) :yearly :quarterly)})
+		:dcs               []
+		:owners            []
+		:note              (:note params)}))
 
 ;;-----------------------------------------------------------------------------
 
@@ -165,8 +170,8 @@
 				[:th (hf/label :xx "Namn")]]
 			(map (fn [x]
 				[:tr
-					[:td.rafield.rpad (hf/label :xx (:estateid x))]
-					[:td [:a.link-thin {:href (str "/edit-estate/" (:estateid x))} (hf/label :xx (:address x))]]])
+					[:td.rafield.rpad (hf/label :xx (:_id x))]
+					[:td [:a.link-thin {:href (str "/edit/" (:_id x))} (hf/label :xx (:address x))]]])
 				(db/get-estates))]))
 
 ;;-----------------------------------------------------------------------------
@@ -183,7 +188,7 @@
 				[:tr [:td {:height 30}]]
 				[:tr
 					[:td (hf/label :xx "Aktiviteter för år")]
-					[:td (hf/drop-down :newyear (range 2010 2020) year)]]
+					[:td (hf/drop-down :newyear (range 2013 config/max-year) year)]]
 				[:tr
 					[:td (hf/submit-button {:class "button1 button"} "Updatera Året")]]
 				[:tr [:td {:height 30}]]])
@@ -202,12 +207,13 @@
 					]
 				(map (fn [x]
 					[:tr.brdr 
-						[:td.rafield.rpad (hf/label :xx (:memberid x))]
-						[:td.ncol (hf/label :xx (:name x))]
-						[:td.rafield.rpad (hf/label :xx (:estateid x))]
-						[:td.acol (hf/label :xx (:address x))]
-						[:td.rafield (hf/label :xx (:bimonths x))]
-						[:td.dcol (hf/check-box {:class "cb"} (utils/mk-tag (:estateid x) "A") (= (:actmonths x) 4095))]
+						[:td.rafield.rpad (hf/label :xx (:_id x))]
+						[:td.ncol         (hf/label :xx (:name x))]
+						[:td.rafield.rpad (hf/label :xx (:_id x))]
+						[:td.acol         (hf/label :xx (:address x))]
+						[:td.rafield      (hf/label :xx (:bimonths x))]
+						[:td.dcol         (hf/check-box {:class "cb"}
+							(utils/mk-tag (:estateid x) "A") (= (:actmonths x) 4095))]
 						[:td (common/mk-acts (:estateid x) (:actmonths x))]])
 					(db/get-activities year))]
 			[:table
@@ -218,7 +224,6 @@
 
 (defn update-activities
 	[{params :params}]
-	;(pp/pprint params)
 	(let [year (:year params)
 		  acts (db/get-acts year)
 		  f-acts (into {} (map (fn [e]

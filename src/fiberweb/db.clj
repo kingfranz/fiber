@@ -17,30 +17,95 @@
             	(taoensso 		[timbre     :as timbre])
             	(fiberweb		[spec       :as spec]
             					[utils      :as utils])
-            	(clojure.java 	[jdbc       :as j])
+            	(cheshire 		[core     		:refer :all])
+				(monger 		[core     		:as mg]
+            					[credentials 	:as mcr]
+            					[collection 	:as mc]
+            					[joda-time  	:as jt]
+            					[operators 		:refer :all])
             	(clojure 		[string     :as str]
             					[set        :as set]
             					[spec       :as s])))
 
 ;;-----------------------------------------------------------------------------
 
-(defonce fiberdb {
-	:classname   "com.mysql.cj.jdbc.Driver"
-	:host        "192.168.0.42"
-    :port        3306
-    :dbtype      "mysql"
-    :dbname      "fiberdb?serverTimezone=CAT"
-    :user        "sa"
-    :password    "wiggins"})
+(defonce db-conn (mg/connect-with-credentials "127.0.0.1"
+							(mcr/create "fiberuser" "fiberdb" "kAllE.kUlA399")))
+(defonce fiberdb (mg/get-db db-conn "fiberdb"))
 
-(defonce fiberdb* {
-	:classname   "com.mysql.cj.jdbc.Driver"
-	:host        "127.0.0.1"
-    :port        3306
-    :dbtype      "mysql"
-    :dbname      "fiberdb?serverTimezone=CAT"
-    :user        "root"
-    :password    "wiggins"})
+(defonce configs "configs")
+(defonce members "members")
+(defonce estates "estates")
+
+;;-----------------------------------------------------------------------------
+
+(s/fdef fname
+	:args (s/cat :s :shop/string)
+	:ret :shop/string)
+
+;monger.collection$find_one_as_map@5f2b4e24users
+(defn fname
+	[s]
+	(second (re-matches #"^[^$]+\$(.+)@.+$" (str s))))
+
+(defn- do-mc
+	[mc-func caller tbl & args]
+	(log/trace (apply str caller ": " (fname mc-func) " " tbl " " (first args)))
+	(let [ret (apply mc-func shopdb tbl (first args))]
+		(log/trace caller "returned:" (pr-str ret))
+		ret))
+
+(defn mc-aggregate
+	[func tbl & args]
+	(do-mc mc/aggregate func tbl args))
+
+(defn mc-find-maps
+	[func tbl & args]
+	(do-mc mc/find-maps func tbl args))
+
+(defn mc-find-one-as-map
+	[func tbl & args]
+	(do-mc mc/find-one-as-map func tbl (vec args)))
+
+(defn mc-find-map-by-id
+	[func tbl & args]
+	(do-mc mc/find-map-by-id func tbl args))
+
+(defn mc-insert
+	[func tbl & args]
+	(do-mc mc/insert func tbl args))
+
+(defn mc-insert-batch
+	[func tbl & args]
+	(do-mc mc/insert-batch func tbl args))
+
+(defn mc-update
+	[func tbl & args]
+	(do-mc mc/update func tbl args))
+
+(defn mc-update-by-id
+	[func tbl & args]
+	(do-mc mc/update-by-id func tbl args))
+
+(defn mc-remove-by-id
+	[func tbl & args]
+	(do-mc mc/remove-by-id func tbl args))
+
+;;-----------------------------------------------------------------------------
+
+(s/fdef mk-enlc :args :shop/string :ret :shop/string)
+
+(defn mk-enlc
+	[en]
+	(-> en str/trim str/lower-case (str/replace #"[ \t-]+" " ")))
+
+(s/fdef get-by-enlc
+	:args (s/cat :tbl :shop/string :en :shop/string)
+	:ret (s/nilable map?))
+
+(defn get-by-enlc
+	[tbl en]
+	(mc-find-one-as-map "get-by-enlc" tbl {:entrynamelc en}))
 
 ;;-----------------------------------------------------------------------------
 
@@ -73,62 +138,47 @@
   		  where toyear is NULL"]))))
 
 (defn add-estate
-	[estate bimonths]
-	(when (estateid-exists? (:estateid estate))
+	[estate]
+	(when (estateid-exists? (:_id estate))
 		(throw (Exception. "duplicate estate ID")))
-	(j/with-db-transaction [db-conn fiberdb]
-		(j/insert! db-conn :estates estate)
-		(doseq [year (range (utils/current-year) 2031)]
-			(j/insert! db-conn :estatebi {
-				:estateid (:estateid estate)
-				:year     year
-				:bimonths bimonths}))))
-(s/fdef add-estate
-	:args (s/cat :estate :fiber/estate :bimonths :estate/bi-months))
+	(mc-insert "add-estate" estates estate))
 
 (defn insert-config
 	[config]
 	(j/insert! fiberdb :configs config))
 
 (defn update-estate
-	[estate]
-	(j/update! fiberdb :estates
-		estate ["estateid = ?" (:estateid estate)]))
+	[estate-part year bi]
+	(mc-update-by-id "update-estate" estates (:_id estate)
+		{$set (dissoc estate :_id)}))
 
 (defn update-estatebi
 	[eid from-year yearly?]
 	(j/update! fiberdb :estatebi
 		{:bimonths (if yearly? 12 3)} ["estateid = ? and year >= ?" eid from-year]))
 
-(s/fdef update-estatedc
-	:args :fiber/estate-dc-entry)
 
 (defn update-estatedc
 	[dc]
 	(j/update! fiberdb :estatedcs
 		dc ["estateid = ? and estatedcid = ?" (:estateid dc) (:estatedcid dc)]))
 
-(s/fdef add-estatedc
-	:args :fiber/estate-dc-entry)
 
 (defn add-estatedc
 	[dc]
 	(j/insert! fiberdb :estatedcs dc))
 
 (defn delete-estatedc
-	[eid dcid]
-	(j/delete! fiberdb :estatedcs ["estateid = ? and estatedcid = ?" eid dcid]))
+	[eid idx]
+	(mc-update-by-id "delete-estatedc" estates eid
+		{$unset {(str "dcs." idx) }}))
 
-(s/fdef update-memberdc
-	:args :fiber/member-dc-entry)
 
 (defn update-memberdc
 	[dc]
 	(j/update! fiberdb :memberdcs
 		dc ["memberid = ? and memberdcid = ?" (:memberid dc) (:memberdcid dc)]))
 
-(s/fdef add-memberdc
-	:args :fiber/member-dc-entry)
 
 (defn add-memberdc
 	[dc]
@@ -219,9 +269,6 @@
 		  from fiberdb.contacts
 		  where memberid = ?
 		  order by preferred DESC" memberid]))
-(s/fdef get-contacts
-	:args :fiber/id
-	:ret  (s/* :fiber/contact))
 
 (defn delete-contact
 	[contact]
@@ -240,6 +287,12 @@
 (defn add-config
 	[config]
 	(j/insert! fiberdb :configs config))
+
+(defn get-memberdcs-all
+	[]
+	(j/query fiberdb
+		["select *
+		  from fiberdb.memberdcs"]))
 
 (defn get-memberdcs
 	[memberid]
@@ -262,6 +315,12 @@
 		  from fiberdb.memberdcs
 		  where memberid = ? and
 		        memberdcid = ?" memberid dcid]))
+
+(defn get-estatedcs-all
+	[]
+	(j/query fiberdb
+		["select *
+		  from fiberdb.estatedcs"]))
 
 (defn get-estatedcs
 	[estateid]
@@ -306,30 +365,18 @@
 
 (defn get-owners
 	[estate year]
-	(j/query fiberdb
-		["select memberid, name, note, fromyear, toyear
-		  from fiberdb.estate_owners
-		  where estateid = ? and
-		        fromyear <= ? and
-		        (toyear is NULL or toyear >= ?)"
-		  (:estateid estate) year year]))
+	(let [whole-year (t/interval (t/date-time year 1 1) (t/date-time year 12 31))
+		  year-match (fn [{mid :_id {from :from to :to} :from-to}]
+		  				(and (t/within? whole-year from)
+		  					 (or (nil? to) (t/within? whole-year to))))
+		  mids (filter year-match (:owners estate))]
+		(mc-find-maps "get-owners" members
+			{:_id {$in mids}})))
 
 (defn get-owner
-	([estateid]
-	(first (j/query fiberdb
-		["select memberid, name, note, fromyear, toyear
-		  from fiberdb.estate_owners
-		  where estateid = ? and
-		        toyear is NULL"
-		  estateid])))
-	([estateid year]
-	(first (j/query fiberdb
-		["select memberid, name, note, fromyear, toyear
-		  from fiberdb.estate_owners
-		  where estateid = ? and
-		        fromyear <= ? and
-		        (toyear is NULL or toyear >= ?)"
-		  estateid year year]))))
+	[estate]
+	(when-let [mid (utils/find-first #(nil? (-> % :from-to :to)) (:owners estate))]
+		(mc-find-map-by-id "get-owner" members mid)))
 
 (defn get-membership-data
 	[year]
@@ -384,9 +431,6 @@
 		first
 		:actmonths
 		(or 0)))
-(s/fdef get-activities-for
-	:args (s/cat :year :fiber/valid-year :eid :fiber/id)
-	:ret  integer?)
 
 (defn get-acts
 	[year]
@@ -403,21 +447,15 @@
 	(j/update! fiberdb :estateact
 		{:actmonths actmonths}
 		["estateid = ? and year = ?" eid year]))
-(s/fdef update-activity
-	:args (s/cat :eid :fiber/estateid :year :fiber/valid-year :actmonths :fiber/months))
 
 (defn update-member-estate
 	[me]
 	(j/update! fiberdb :membersestates me
 		["memberid = ? and estateid = ?" (:memberid me) (:estateid me)]))
-(s/fdef update-member-estate
-	:args :fiber/me-entry)
 
 (defn insert-member-estate
 	[me]
 	(j/insert! fiberdb :membersestates me))
-(s/fdef insert-member-estate
-	:args :fiber/me-entry)
 
 (defn get-member-cont
 	[]
@@ -466,8 +504,6 @@
 			:fromyear (:fromyear member)})
 		(doseq [contact contacts]
 			(j/insert! db-conn :contacts contact))))
-(s/fdef add-member
-	:args (s/cat :member :fiber/member :eid :fiber/estateid :contacts (s/+ :fiber/contact)))
 
 ;;------------------------------------------------------------------------------------
 
@@ -539,5 +575,9 @@
 	(j/query fiberdb
   		["select *
   		  from fiberdb.configs"]))
+<<<<<<< 35b96e22334c1f5fb988d6dfba4021266c45d5e8
+=======
+
+>>>>>>> work in progress
 
 ; mongoimport -u fiberuser -p "kAllE.kUlA399" --authenticationDatabase fiberdb --db fiberdb --file estates.json --drop --jsonArray

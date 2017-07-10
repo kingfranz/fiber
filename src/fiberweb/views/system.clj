@@ -10,12 +10,10 @@
             					[color      :as color])
              	(clj-time 		[core       :as t]
             					[local      :as l]
-            					[coerce     :as c]
             					[format     :as f]
             					[periodic   :as p])
              	(clj-pdf 		[core       :as pdf])
              	(clojure.data 	[csv        :as csv])
-             	(clojure.data 	[json       :as json])
             	(hiccup 		[core       :as h]
             					[def        :as hd]
             					[element    :as he]
@@ -29,52 +27,6 @@
             					[set        :as set])))
 
 ;;-----------------------------------------------------------------------------
-
-(defn q->b
-	[q]
-	(nth [2r111111111111 2r111000000000 2r000111000000 2r000000111000 2r000000000111] q))
-
-(defn bit->month
-	[b]
-	(cond
-		(not (zero? (bit-and 2r100000000000 b))) 1
-		(not (zero? (bit-and 2r010000000000 b))) 2
-		(not (zero? (bit-and 2r001000000000 b))) 3
-		(not (zero? (bit-and 2r000100000000 b))) 4
-		(not (zero? (bit-and 2r000010000000 b))) 5
-		(not (zero? (bit-and 2r000001000000 b))) 6
-		(not (zero? (bit-and 2r000000100000 b))) 7
-		(not (zero? (bit-and 2r000000010000 b))) 8
-		(not (zero? (bit-and 2r000000001000 b))) 9
-		(not (zero? (bit-and 2r000000000100 b))) 10
-		(not (zero? (bit-and 2r000000000010 b))) 11
-		(not (zero? (bit-and 2r000000000001 b))) 12
-		:else (throw (ex-info (str "Invalid months: " b) {:cause :invalid-months}))))
-(s/fdef bit->month
-	:args (s/int-in 0 4096)
-	:ret  (s/int-in 1 13))
-
-(defn month->bit
-	[m]
-	(unsigned-bit-shift-right 2r1000000000000 m))
-(s/fdef month->bit
-	:args (s/int-in 1 13)
-	:ret  integer?)
-
-(defn bits->months
-	[bits qmonths]
-	(prn "bits->months:" bits qmonths)
-	(for [m (range 1 13)
-		:let [mb (month->bit m)]
-		:when (not (zero? (bit-and bits mb qmonths)))]
-		m))
-(s/fdef bits->months
-	:args (s/cat :bits integer? :qmonths integer?)
-	:ret  (s/* integer?))
-
-(defn mk-tag
-	[id idx]
-	(keyword (str "tag-" id "-" idx)))
 
 (defn get-mf-dc
 	[mid year]
@@ -131,10 +83,7 @@
 	[quarter]
 	(if (zero? quarter)
 		0
-		(+ (q->b quarter) (mk-months-upto (dec quarter)))))
-(s/fdef mk-months-upto
-	:args (s/int-in 1 5)
-	:ret  (s/int-in 2r111000000000 2r111111111111))
+		(+ (utils/q->b quarter) (mk-months-upto (dec quarter)))))
 
 (defn get-edcs
 	[id year qmonths dc-type]
@@ -142,10 +91,7 @@
 		 (filter #(and (= (:year %) year)
 					   (= (:type %) dc-type)
 				       (not (zero? (bit-and (:months %) qmonths)))))
-		 (map #(bit->month (:months %)))))
-(s/fdef get-edcs
-	:args (s/cat :id :fiber/id :year :fiber/valid-year :quarter (s/int-in 1 5) :dc-type string?)
-	:ret  (s/* (s/int-in 1 13)))
+		 (map #(utils/bit->month (:months %)))))
 
 (defn update-estate-q-fixed
 	[year quarter yearly?]
@@ -163,7 +109,7 @@
         						  :tax      (:connectionfee config)
         						  :type     "connection-fee"
         						  :year     year
-        						  :months   (month->bit m)
+        						  :months   (utils/month->bit m)
         						  :estateid (:id e)})))))
 
 (defn update-estate-q-activity
@@ -174,7 +120,7 @@
 	      qmonths (mk-months-upto quarter)
 	      efees  (map (fn [id] {:id   id
 	      						:dcs  (get-edcs id year qmonths "operator-fee")
-	      						:acts (bits->months (db/get-activities-for year id) qmonths)}) eids)
+	      						:acts (utils/bits->months (db/get-activities-for year id) qmonths)}) eids)
 	      eowe   (remove #(= (count (:dcs %)) (count (:acts %))) efees)
 	      config (db/get-config-at year)]
         (doseq [e eowe]
@@ -185,7 +131,7 @@
         						  :tax      (:operatorfee config)
         						  :type     "operator-fee"
         						  :year     year
-        						  :months   (month->bit m)
+        						  :months   (utils/month->bit m)
         						  :estateid (:id e)})))))
 
 (defn update-estates-quarter
@@ -239,7 +185,7 @@
 				[:td.rafield.tafield {:width 120} (hf/label :xx (str "(" (:optax x) ")"))]
 				[:td.rafield.tafield {:width 100} (hf/label :xx (:payamount x))]
 				[:td.rafield.tafield {:width 100} (hf/label :xx (:total x))]
-				]) (db/get-usage-data year (q->b quarter) 3))]))
+				]) (db/get-usage-data year (utils/q->b quarter) 3))]))
 
 (defn update-estates-yearly
 	[year]
@@ -287,7 +233,7 @@
 				[:td.rafield.tafield {:width 120} (hf/label :xx (str "(" (:optax x) ")"))]
 				[:td.rafield.tafield {:width 100} (hf/label :xx (:payamount x))]
 				[:td.rafield.tafield {:width 100} (hf/label :xx (:total x))]
-				]) (db/get-usage-data year (q->b 0) 12))]))
+				]) (db/get-usage-data year (utils/q->b 0) 12))]))
 
 (defn mk-rows
 	[year]
@@ -455,6 +401,7 @@
 		  			:operatortax   (/ (BigDecimal. (:operator-tax params)) 100M)
 		  			:fromyear      (utils/ym->f (:fromyear params) (:frommonth params))}))
 
+<<<<<<< 35b96e22334c1f5fb988d6dfba4021266c45d5e8
 (defn get-c
 	[x i]
 	(if (>= i (count (:contacts x)))
@@ -764,3 +711,5 @@
 	)
 
 ;;-----------------------------------------------------------------------------
+=======
+>>>>>>> work in progress

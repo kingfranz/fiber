@@ -48,7 +48,7 @@
 (defonce memberid-regex #"member-([0-9])+")
 (s/def :member/_id      #(and (string? %) (re-matches memberid-regex %)))
 
-(s/def :fiber/from-to   (s/keys :req-un [:fiber/fromyear :fiber/toyear]))
+(s/def :fiber/from-to   (s/keys :req-un [:fiber/from :fiber/to]))
 
 (s/def :member/estates  (s/* (s/map-of :estate/_id :fiber/from-to)))
 
@@ -93,14 +93,12 @@
 (s/def :estate/billing-interval  (s/map-of :fiber/year :estate/bi-months))
 (s/def :estate/billing-intervals (s/* :estate/billing-interval))
 
-(s/def :estate/activity        (s/map-of :fiber/year :estate/months))
-(s/def :estate/activities      (s/* :estate/activity))
+(s/def :estate/activities      (s/* (s/keys :req-un [:fiber/year :estate/months])))
 
 (s/def :estate/address           :fiber/valid-string)
 (s/def :estate/location          :fiber/valid-string)
 
-(s/def :estate/owner           (s/keys :req-un [:member/_id :fiber/from-to]))
-(s/def :estate/owners          (s/* :estate/owner))
+(s/def :estate/owners          (s/* (s/keys :req-un [:member/_id :fiber/from-to])))
 
 (s/def :fiber/estate (s/keys :req-un [:estate/_id
 								      :estate/location
@@ -116,21 +114,21 @@
 ;; config
 ;;------------------------------------------------------------------------------------
 
-(s/def :conf/entered        :fiber/date)
-(s/def :conf/membership-fee decimal?)
-(s/def :conf/membership-tax (s/and decimal? #(>= % 0.0M) #(< % 1.0M)))
-(s/def :conf/connection-fee decimal?)
-(s/def :conf/connection-tax (s/and decimal? #(>= % 0.0M) #(< % 1.0M)))
-(s/def :conf/operator-fee   decimal?)
-(s/def :conf/operator-tax   (s/and decimal? #(>= % 0.0M) #(< % 1.0M)))
+(s/def :conf/entered       :fiber/date)
+(s/def :conf/membershipfee decimal?)
+(s/def :conf/membershiptax (s/and decimal? #(>= % 0.0M) #(< % 1.0M)))
+(s/def :conf/connectionfee decimal?)
+(s/def :conf/connectiontax (s/and decimal? #(>= % 0.0M) #(< % 1.0M)))
+(s/def :conf/operatorfee   decimal?)
+(s/def :conf/operatortax   (s/and decimal? #(>= % 0.0M) #(< % 1.0M)))
 
 (s/def :fiber/config (s/keys :req-un [:conf/entered
-								  	  :conf/membership-fee
-								  	  :conf/membership-tax
-								  	  :conf/connection-fee
-								  	  :conf/connection-tax
-								  	  :conf/operator-fee
-								  	  :conf/operator-tax
+								  	  :conf/membershipfee
+								  	  :conf/membershiptax
+								  	  :conf/connectionfee
+								  	  :conf/connectiontax
+								  	  :conf/operatorfee
+								  	  :conf/operatortax
 								  	  :fiber/fromyear]))
 
 ;;------------------------------------------------------------------------------------

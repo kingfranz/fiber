@@ -173,9 +173,6 @@
 	 :toyear (when (some? (get params (utils/mk-tag "endtag" mid)))
 	        	(utils/ymd->f (utils/param->double params (utils/mk-tag "toyear" mid))
 		                      (utils/param->double params (utils/mk-tag "tomonth" mid))))})
-(s/fdef get-me
-	:args (s/cat :params map? :eid :fiber/id :mid :fiber/memberid)
-	:ret  :fiber/me-entry)
 
 (defn extract-estates
 	[params]

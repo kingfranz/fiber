@@ -6,6 +6,7 @@
                  [hiccup "1.0.5"]
                  [clj-time "0.13.0"]
                  [garden "1.3.2"]
+                 [org.clojure/data.json "0.2.6"]
                  [com.taoensso/timbre "4.10.0"]
                  [clj-pdf "2.2.24"]
                  [org.clojure/data.json "0.2.6"]
