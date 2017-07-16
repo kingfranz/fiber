@@ -1,31 +1,31 @@
 (ns fiberweb.db
-  	(:require 	(garden 		[core       :as g]
-            					[units      :as u]
-            					[selectors  :as sel]
-            					[stylesheet :as ss]
-            					[color      :as color])
-             	(clj-time 		[core       :as t]
-            					[local      :as l]
-            					[format     :as f]
-            					[periodic   :as p])
-            	(hiccup 		[core       :as h]
-            					[def        :as hd]
-            					[element    :as he]
-            					[form       :as hf]
-            					[page       :as hp]
-            					[util       :as hu])
-            	(taoensso 		[timbre     :as timbre])
-            	(fiberweb		[spec       :as spec]
-            					[utils      :as utils])
+  	(:require 	(garden 		[core       	:as g]
+            					[units      	:as u]
+            					[selectors  	:as sel]
+            					[stylesheet 	:as ss]
+            					[color      	:as color])
+             	(clj-time 		[core       	:as t]
+            					[local      	:as l]
+            					[format     	:as f]
+            					[periodic   	:as p])
+            	(hiccup 		[core       	:as h]
+            					[def        	:as hd]
+            					[element    	:as he]
+            					[form       	:as hf]
+            					[page       	:as hp]
+            					[util       	:as hu])
+            	(taoensso 		[timbre     	:as timbre])
+            	(fiberweb		[spec       	:as spec]
+            					[utils      	:as utils])
             	(cheshire 		[core     		:refer :all])
 				(monger 		[core     		:as mg]
             					[credentials 	:as mcr]
             					[collection 	:as mc]
             					[joda-time  	:as jt]
             					[operators 		:refer :all])
-            	(clojure 		[string     :as str]
-            					[set        :as set]
-            					[spec       :as s])))
+            	(clojure 		[string     	:as str]
+            					[set        	:as set]
+            					[spec       	:as s])))
 
 ;;-----------------------------------------------------------------------------
 
@@ -108,476 +108,201 @@
 	(mc-find-one-as-map "get-by-enlc" tbl {:entrynamelc en}))
 
 ;;-----------------------------------------------------------------------------
+;; estate
 
 (defn estateid-exists?
-	[id]
-	(seq (j/query fiberdb
-  		["select *
-  		  from fiberdb.estates
-  		  where estateid = ?" id])))
-
-(defn memberid-exists?
-	[id]
-	(seq (j/query fiberdb
-  		["select *
-  		  from fiberdb.members
-  		  where memberid = ?" id])))
-
-(defn member-count
-	[]
-	(:count (first (j/query fiberdb
-  		["select count(*) as count
-  		  from fiberdb.members
-  		  where toyear is NULL"]))))
+	[eid]
+	(some? (mc-find-one-as-map "estateid-exists?" fiberdb eid)))
+(s/fdef estateid-exists?
+	:args :estate/_id
+	:ret  boolean?)
 
 (defn estate-count
 	[]
-	(:count (first (j/query fiberdb
-  		["select count(*) as count
-  		  from fiberdb.estates
-  		  where toyear is NULL"]))))
+	(mc/count fiberdb estates {}))
+(s/fdef estate-count
+	:ret integer?)
 
 (defn add-estate
 	[estate]
 	(when (estateid-exists? (:_id estate))
 		(throw (Exception. "duplicate estate ID")))
 	(mc-insert "add-estate" estates estate))
-
-(defn insert-config
-	[config]
-	(j/insert! fiberdb :configs config))
+(s/fdef add-estate
+	:args :fiber/estate)
 
 (defn update-estate
-	[estate-part year bi]
+	[estate-part]
 	(mc-update-by-id "update-estate" estates (:_id estate)
 		{$set (dissoc estate :_id)}))
-
-(defn update-estatebi
-	[eid from-year yearly?]
-	(j/update! fiberdb :estatebi
-		{:bimonths (if yearly? 12 3)} ["estateid = ? and year >= ?" eid from-year]))
-
-
-(defn update-estatedc
-	[dc]
-	(j/update! fiberdb :estatedcs
-		dc ["estateid = ? and estatedcid = ?" (:estateid dc) (:estatedcid dc)]))
-
+(s/fdef update-estate
+	:args :fiber/estate-light)
 
 (defn add-estatedc
-	[dc]
-	(j/insert! fiberdb :estatedcs dc))
+	[eid dc]
+	(mc-update-by-id "add-estatedc" estates eid
+		{$push {:dcs dc}}))
 
 (defn delete-estatedc
 	[eid idx]
-	(mc-update-by-id "delete-estatedc" estates eid
-		{$unset {(str "dcs." idx) }}))
-
-
-(defn update-memberdc
-	[dc]
-	(j/update! fiberdb :memberdcs
-		dc ["memberid = ? and memberdcid = ?" (:memberid dc) (:memberdcid dc)]))
-
-
-(defn add-memberdc
-	[dc]
-	(j/insert! fiberdb :memberdcs dc))
-
-(defn delete-memberdc
-	[mid dcid]
-	(j/delete! fiberdb :memberdcs ["memberid = ? and memberdcid = ?" mid dcid]))
-
-(defn update-member
-	[member]
-	(j/update! fiberdb :members
-		member ["memberid = ?" (:memberid member)]))
-
-(defn get-member
-	[id]
-	(first (j/query fiberdb
-		["select *
-		  from members
-		  where memberid = ?" id])))
-
-(defn get-members
-	([]
-	(j/query fiberdb
-		["select *
-		  from members"]))
-	([year]
-	(j/query fiberdb
-		["select *
-		  from members
-		  where fromyear <= ? and
-		        (toyear is NULL or toyear >= ?)" year year])))
+	(let [dcs     (mc-find-map-by-id "delete-estatedc" estates eid [dcs])
+		  new-dcs (utils/drop-nth idx dcs)]
+		(mc-update-by-id "delete-estatedc" estates eid
+			{$set {:cs new-dcs}})))
 
 (defn get-estate
 	[id]
-	(first (j/query fiberdb
-		["select *
-		  from estates
-		  where estateid = ?" id])))
-
-(defn get-membersestates
-	[]
-	(j/query fiberdb
-		["select *
-		  from fiberdb.membersestates"]))
+	(mc-find-map-by-id "get-estate" estates id))
+(s/fdef get-estate
+	:args :estate/estateid
+	:ret  :fiber/estate)
 
 (defn get-estates
 	([]
-	(j/query fiberdb
-		["select *
-		  from fiberdb.estates"]))
+	(mc-find-maps "get-estates" estates {}))
 	([memberid]
-	(j/query fiberdb
-		["select *
-		  from fiberdb.member_estates
-		  where memberid = ?" memberid]))
+	(mc-find-maps "get-estates" estates {:owners._id memberid}))
 	([memberid year]
-	(j/query fiberdb
-		["select *
-		  from fiberdb.member_estates
-		  where memberid = ? and
-		        me_fromyear <= ? and
-		        (me_toyear is NULL or me_toyear >= ?)" memberid year year])))
+	(mc-find-maps "get-estates" estates {$and [{:owners._id memberid}
+											   {:owners.from-to.from {$lte (t/date-time year 12 31)}}
+											   {$or [{:owners.from-to.to nil}
+											   		 {:owners.from-to.to {$gte (t/date-time year 1 1)}}]}]})))
+(s/fdef get-estates
+	:args (s/alt :none empty? :mid :estate/_id :mid-year (s/cat :mid :member/_id :year :fiber/year))
+	:ret  (s/* :fiber/estate))
 
-(defn get-avail-estates
-	[]
-	(let [estates (get-estates)
-		  mes*    (get-membersestates)
-		  mes     (->> mes*
-		  			   (group-by :estateid)
-		  			   (map (fn [[k v]] [k (every? #(some? (:toyear %)) v)]))
-		  			   (filter #(true? (second %)))
-		  			   (map first)
-		  			   set)]
-		(concat (filter #(some #{(:estateid %)} mes) estates)
-				(remove #(some #{(:estateid %)} (set (map :estateid mes*))) estates))))
-
-(defn get-contacts-all
-	[]
-	(j/query fiberdb
-		["select *
-		  from fiberdb.contacts"]))
-
-(defn get-contacts
-	[memberid]
-	(j/query fiberdb
-		["select *
-		  from fiberdb.contacts
-		  where memberid = ?
-		  order by preferred DESC" memberid]))
-
-(defn delete-contact
-	[contact]
-	(j/delete! fiberdb :contacts
-		["memberid = ? and contactid = ?" (:memberid contact) (:contactid contact)]))
-
-(defn update-contact
-	[contact]
-	(j/update! fiberdb :contacts contact
-		["memberid = ? and contactid = ?" (:memberid contact) (:contactid contact)]))
-
-(defn add-contact
-	[contact]
-	(j/insert! fiberdb :contacts contact))
-
-(defn add-config
-	[config]
-	(j/insert! fiberdb :configs config))
-
-(defn get-memberdcs-all
-	[]
-	(j/query fiberdb
-		["select *
-		  from fiberdb.memberdcs"]))
-
-(defn get-memberdcs
-	[memberid]
-	(j/query fiberdb
-		["select *
-		  from fiberdb.memberdcs
-		  where memberid = ?
-		  order by date" memberid]))
-
-(defn get-memberdcs-all
-	[]
-	(j/query fiberdb
-		["select *
-		  from fiberdb.memberdcs"]))
-
-(defn get-memberdc
-	[memberid dcid]
-	(j/query fiberdb
-		["select *
-		  from fiberdb.memberdcs
-		  where memberid = ? and
-		        memberdcid = ?" memberid dcid]))
-
-(defn get-estatedcs-all
-	[]
-	(j/query fiberdb
-		["select *
-		  from fiberdb.estatedcs"]))
-
-(defn get-estatedcs
-	[estateid]
-	(j/query fiberdb
-		["select *
-		  from fiberdb.estatedcs
-		  where estateid = ?" estateid]))
-
-(defn get-estatedcs-all
-	[]
-	(j/query fiberdb
-		["select *
-		  from fiberdb.estatedcs"]))
-
-(defn get-estatedc
-	[estateid dcid]
-	(j/query fiberdb
-		["select *
-		  from fiberdb.estatedcs
-		  where estateid = ? and
-		        estatedcid = ?" estateid dcid]))
-
-(defn get-estatebi
-	[estateid]
-	(j/query fiberdb
-		["select *
-		  from fiberdb.estatebi
-		  where estateid = ?" estateid]))
-
-(defn get-estatebi-all
-	[]
-	(j/query fiberdb
-		["select *
-		  from fiberdb.estatebi"]))
-
-(defn get-estatebi-year
+(defn get-estates-at
 	[year]
-	(j/query fiberdb
-		["select *
-		  from fiberdb.estatebi
-		  where year = ?" year]))
-
-(defn get-owners
-	[estate year]
-	(let [whole-year (t/interval (t/date-time year 1 1) (t/date-time year 12 31))
-		  year-match (fn [{mid :_id {from :from to :to} :from-to}]
-		  				(and (t/within? whole-year from)
-		  					 (or (nil? to) (t/within? whole-year to))))
-		  mids (filter year-match (:owners estate))]
-		(mc-find-maps "get-owners" members
-			{:_id {$in mids}})))
-
-(defn get-owner
-	[estate]
-	(when-let [mid (utils/find-first #(nil? (-> % :from-to :to)) (:owners estate))]
-		(mc-find-map-by-id "get-owner" members mid)))
-
-(defn get-membership-data
-	[year]
-	(j/query fiberdb
-  		["select *
-  		  from fiberdb.member_contact_sum
-  		  where fromyear <= ? and (toyear IS NULL or toyear = ?) and
-  		        total < 0" year year]))
-
-(defn- get-estate-debt
-	[id year monthmask]
-	(first (j/query fiberdb
-		["select *
-		  from fiberdb.estatedc_sums
-		  where year = ? and estateid = ? and
-		        (conmonths & ?) <> 0 and
-		        (opmonths & ?) <> 0" year id monthmask monthmask])))
-
-(defn get-usage-data
-	[year monthmask bi-months]
-	(->> (j/query fiberdb
-		["select distinct memberid, name, estateid, address, contact
-		  from fiberdb.estate_usage
-		  where fromyear <= ? and (toyear is NULL or toyear >= ?) and
-			    year = ? and bimonths = ? and (actmonths & ?) <> 0
-		  order by memberid"
-			year year year bi-months monthmask])
-		(map #(merge % (or (get-estate-debt (:estateid %) year monthmask) {:total 0M})))
-		(remove #(>= (:total %) 0M))))
-
-(defn get-activities
-	[year]
-	(j/query fiberdb
-		["select distinct memberid, name, estateid, address, bimonths, actmonths
-		  from fiberdb.estate_usage
-		  where fromyear <= ? and (toyear is NULL or toyear >= ?) and
-			    year = ?
-		  order by memberid" year year year]))
-
-(defn get-activities-all
-	[]
-	(j/query fiberdb
-		["select *
-		  from fiberdb.estateact"]))
-
-(defn get-activities-for
-	[year eid]
-	(-> (j/query fiberdb
-			["select actmonths
-			  from fiberdb.estateact
-		 	  where year = ? and estateid = ?" year eid])
-		first
-		:actmonths
-		(or 0)))
-
-(defn get-acts
-	[year]
-	(j/query fiberdb
-		["select ea.*
-		  from fiberdb.estateact ea
-		  inner join fiberdb.membersestates me on me.estateid = ea.estateid
-		  where me.fromyear <= ? and
-		        (me.toyear is NULL or me.toyear >= ?) and
-		        ea.year = ?" year year year]))
+	(mc-find-maps "get-estates-at" estates {$and [{:owners.from-to.from {$lte (t/date-time year 12 31)}}
+											      {$or [{:owners.from-to.to nil}
+											   		    {:owners.from-to.to {$gte (t/date-time year 1 1)}}]}]}))
+(s/fdef get-estates-at
+	:args :fiber/year
+	:ret  (s/* :fiber/estate))
 
 (defn update-activity
-	[eid year actmonths]
-	(j/update! fiberdb :estateact
-		{:actmonths actmonths}
-		["estateid = ? and year = ?" eid year]))
-
-(defn update-member-estate
-	[me]
-	(j/update! fiberdb :membersestates me
-		["memberid = ? and estateid = ?" (:memberid me) (:estateid me)]))
-
-(defn insert-member-estate
-	[me]
-	(j/insert! fiberdb :membersestates me))
-
-(defn get-member-cont
-	[]
-	(->> (j/query fiberdb
-			["select memberid, name, fromyear, note
-			  from fiberdb.members
-		 	  where toyear is NULL"])
-		 (map #(assoc % :contacts (get-contacts (:memberid %))))))
-
-(defn get-all
-	[]
-	(j/query fiberdb
-		["select *
-		  from fiberdb.current_full
-		  order by memberid"]))
-
-(defn get-full
-	[year]
-	(let [members (j/query fiberdb [
-			"select memberid, name, total
-			 from fiberdb.member_contact_sum
-			 where fromyear <= ? and (toyear is NULL or toyear >= ?)
-			 order by memberid" year year])
-		  estates (j/query fiberdb [
-			"select estateid, address, total, memberid
-			from fiberdb.estate_sums
-			where year = ?" year])]
-		 (->> members
-		 	  (map (fn [member] (assoc member :estates (filter #(= (:memberid %) (:memberid member)) estates))))
-		 	  (remove (fn [member] (and (>= (:total member) 0M)
-		 	                            (>= (reduce + (map :total (:estates member))) 0M)))))))
-
-(defn add-member
-	[member eid contacts]
-	(if (memberid-exists? (:memberid member))
-		(throw (Exception. "duplicate member ID")))
-	(if-not (estateid-exists? eid)
-		(throw (Exception. "unknown estate ID")))
-	(if (some? (get-owner eid))
-		(throw (Exception. "estate not available")))
-	(j/with-db-transaction [db-conn fiberdb]
-		(j/insert! db-conn :members member)
-		(j/insert! db-conn :membersestates {
-			:memberid (:memberid member)
-			:estateid eid
-			:fromyear (:fromyear member)})
-		(doseq [contact contacts]
-			(j/insert! db-conn :contacts contact))))
-
-;;------------------------------------------------------------------------------------
-
-(defn add-member-payment
-	[memberid amount year]
-	{:pre [(decimal? amount) (not= amount 0M) (s/valid? :fiber/valid-year year)]}
-	(j/insert! fiberdb :memberdcs
-		{:amount amount
-		 :tax 0M
-		 :type "payment"
-		 :year year
-		 :memberid memberid}))
+	[eid year months]
+	(mc-update "update-activity" estates
+		{:_id eid :activities.year year}
+		{$set {:activities.$.months months}}))
+(s/fdef update-activity
+	:args (s/cat :eid :estate/estateid :year :fiber/year :months :fiber/months))
 
 (defn add-estate-payment
 	[estateid amount year]
-	{:pre [(decimal? amount) (not= amount 0M) (s/valid? :fiber/valid-year (utils/spy year))]}
-	(j/insert! fiberdb :estatedcs
-		{:amount amount
-		 :tax 0M
-		 :type "payment"
-		 :year year
-		 :months 4095
-		 :estateid estateid}))
+	(mc-update-by-id "add-estate-payment" estates estateid
+		{$set {:date   (l/local-now)
+			   :amount amount
+		 	   :tax    0M
+			   :type   :payment
+			   :year   year
+			   :months (set (range 1 13))}}))
+(s/fdef add-estate-payment
+	:args (s/cat :estateid :estate/estateid :amount :fiber/amount :year :fiber/year))
 
-;;------------------------------------------------------------------------------------
+;;-----------------------------------------------------------------------------
+;; member
 
-;(defn get-estates-at
-;	[year]
-;	(j/query fiberdb
-;		["select *
-;		  from fiberdb.estates
-;		  where fromyear <= ? and
-;		       (toyear is NULL or toyear >= ?)" year year]))
+(defn memberid-exists?
+	[mid]
+	(some? (mc-find-one-as-map "memberid-exists?" fiberdb mid)))
+(s/fdef memberid-exists?
+	:args :fiber/memberid
+	:ret  boolean?)
 
-;(defn get-members-with-estates
-;	[year]
-;	(j/query fiberdb
-;		["select m.*
-;		  from fiberdb.members m
-;		  inner join fiberdb.membersestates me on me.memberid = m.memberid
-;		  where me.fromyear <= ? and
-;		       (me.toyear is NULL or me.toyear >= ?)
-;		  oreder by m.name" year year]))
+(defn member-count
+	[]
+	(mc/count fiberdb members {}))
+(s/fdef member-count
+	:ret integer?)
 
-;;------------------------------------------------------------------------------------
+(defn add-memberdc
+	[mid dc]
+	(mc-update-by-id "add-memberdc" members mid
+		{$push {:dcs dc}}))
 
-;(defn get-members-not-charged-membership
-;	[year]
-;	{:pre [(s/valid? :fiber/valid-year year)]}
-;	(j/query fiberdb
- ; 		["select m.*
-  ;		  from fiberdb.members m
-  ;		  inner join fiberdb.memberdcs dcs on dcs.memberid = m.memberid
-  ;		  where dcs.year <= ? and dcs.type = 'membership-fee'
-  ;		  and m.fromyear <= ? and (m.toyear is NULL or m.toyear >= ?)" year year year]))
+(defn delete-memberdc
+	[mid idx]
+	(let [dcs     (mc-find-map-by-id "delete-memberdc" members mid [dcs])
+		  new-dcs (utils/drop-nth idx dcs)]
+		(mc-update-by-id "delete-memberdc" members mid
+			{$set {:cs new-dcs}})))
 
-;;------------------------------------------------------------------------------------
+(defn update-member
+	[member]
+	(mc-update-by-id members (:_id member)
+		{$set member}))
+(s/fdef update-member
+	:args :fiber/member)
+
+(defn get-member
+	[id]
+	(mc-find-one-as-map "get-member" members {:_id id}))
+(s/fdef get-member
+	:args :fiber/memberid
+	:ret  :fiber/member)
+
+(defn get-members
+	([]
+	(mc-find-maps "get-members" members {}))
+	([year]
+	(mc-find-maps "get-members" members
+		{$and [{:from-to.from {$lte (t/date-time year 12 31)}}
+		       {$or [{:from-to.to nil}
+		             {:from-to.to {$gte (t/date-time year 1 1)}}]}]})))
+(s/fdef get-members
+	:args (s/? :fiber/year)
+	:ret  (s/* :fiber/member))
+
+(defn get-current-members
+	[]
+	(mc-find-maps "get-members" members
+		{$and [{:from-to.from {$lte (l/local-now)}}
+			   {:from-to.to nil}]}))
+
+(defn add-member
+	[member]
+	(when (memberid-exists? (:_id member))
+		(throw (Exception. "duplicate member ID")))
+	(mc-insert "add-member" members member))
+(s/fdef add-member
+	:args :fiber/member)
+
+(defn add-member-payment
+	[memberid amount year]
+	(mc-update-by-id "add-member-payment" members memberid
+		{$set {:date (l/local-now)
+			   :amount amount
+		 	   :tax 0M
+			   :type :payment
+			   :year year}}))
+(s/fdef add-member-payment
+	:args (s/cat :memberid :member/memberid :amount :fiber/amount :year :fiber/year))
+
+;;-----------------------------------------------------------------------------
+;; config
+
+(defn add-config
+	[config]
+	(mc-insert "insert-config" configs config))
+(s/fdef insert-config
+	:args :fiber/config)
 
 (defn get-config-at
 	[year]
-	(last (j/query fiberdb
-  		["select *
-  		  from fiberdb.configs
-  		  where fromyear <= ?
-  		  order by fromyear" year])))
+	(->> (mc-find-maps "get-config-at" configs {:year {$lte (t/date-time year 12 31)}})
+		 (sort-by :year)
+		 last))
+(s/fdef get-config-at
+	:args :fiber/year
+	:ret  :fiber/config)
 
 (defn get-configs
 	[]
-	(j/query fiberdb
-  		["select *
-  		  from fiberdb.configs"]))
-<<<<<<< 35b96e22334c1f5fb988d6dfba4021266c45d5e8
-=======
+	(mc-find-maps "get-configs" configs {}))
+(s/fdef get-configs
+	:ret  (s/* :fiber/config))
 
->>>>>>> work in progress
+;;------------------------------------------------------------------------------------
 
 ; mongoimport -u fiberuser -p "kAllE.kUlA399" --authenticationDatabase fiberdb --db fiberdb --file estates.json --drop --jsonArray

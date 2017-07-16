@@ -99,31 +99,30 @@
 ;;-----------------------------------------------------------------------------
 
 (defn mk-acts
-	[eid bits]
+	[eid months]
 	[:table
 		[:tr
-			(map (fn [i]
-				[:td {:width 30} (hf/check-box {:class "cb"} (utils/mk-tag eid (inc i)) (bit-test bits i))])
-				(range 12))]])
+			(for [i (range 1 13)]
+				[:td {:width 30} (hf/check-box {:class "cb"} (utils/mk-tag eid i) (some #{i} months))])]])
 
 (defn show-acts
 	[months]
 	[:table
 		[:tr
-			(map (fn [i] [:td {:width 30} (when (some #{i} (set months)) "X")]) (range 12))]])
+			(map (fn [i] [:td {:width 30} (when (some #{i} months) "X")]) (range 1 13))]])
 
 (defn get-months
 	[id params]
-	(for [i (range 1 13)
+	(set (for [i (range 1 13)
 		:when (some? (get params (utils/mk-tag id i)))]
-		i))
+		i)))
 
 ;;-----------------------------------------------------------------------------
 
 (defn dc-row
 	[m-or-e idx dc]
 	(let [ddmap    (if (member? m-or-e) memberdc-map estatedc-map)
-		  dc-type  (get ddmap (:type dc))]
+		  dc-type  (get ddmap (:dc-type dc))]
 		[:tr
 			[:td.ddcol.rpad (hf/label {:class "rafield"} :x (some->> (:date dc) utils/ts->d))]
 			[:td.rpad       (hf/label {:class "rafield"} :x dc-type)]
@@ -187,15 +186,14 @@
 
 (defn new-dc
 	[params]
-	(let [dc {:_id     (:_id params)
-		  	  :date    (f/parse (:date params))
+	(let [dc {:date    (f/parse (:date params))
 		      :dc-type (get (if (member? id) imemberdc-map iestatedc-map) (:dc-type params))
 		      :amount  (utils/param->bigdec params :amount)
 		      :tax     (utils/param->bigdec params :tax)
 		      :year    (utils/param->int params :year)}]
 		(if (member? (:_id params))
-			(db/add-memberdc dc)
-			(db/add-estatedc (assoc dc :months (get-months id params))))
+			(db/add-memberdc (:_id params) dc)
+			(db/add-estatedc (:_id params) (assoc dc :months (get-months id params))))
 		(ring/redirect (str "/edit/" (:_id params)))))
 
 ;;-----------------------------------------------------------------------------

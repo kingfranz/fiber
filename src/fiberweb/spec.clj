@@ -70,6 +70,16 @@
                                	  		 :member/dcs
                                	  		 :fiber/note]))
 
+(s/def :member/feeamount         decimal?)
+(s/def :member/feetax            decimal?)
+(s/def :member/payamount         decimal?)
+(s/def :member/total             decimal?)
+
+(s/def :fiber/member-sum         (s/keys :req-un [:member/feeamount
+		 										  :member/feetax
+		 										  :member/payamount
+		 										  :member/total]))
+
 ;;------------------------------------------------------------------------------------
 ;; estate
 ;;------------------------------------------------------------------------------------
@@ -89,8 +99,8 @@
 												  :estate/months]))
 (s/def :estate/dcs               (s/* :estate/dc-entry))
 
-(s/def :estate/bi-months         #{:quarterly :yearly})
-(s/def :estate/billing-interval  (s/keys :req-un [:fiber/year :estate/bi-months]))
+(s/def :estate/interval          #{:quarterly :yearly})
+(s/def :estate/billing-interval  (s/keys :req-un [:fiber/year :estate/interval]))
 (s/def :estate/billing-intervals (s/* :estate/billing-interval))
 
 (s/def :estate/activities        (s/* (s/keys :req-un [:fiber/year :estate/months])))
@@ -109,6 +119,27 @@
 			                        		      :estate/dcs
 			                        		      :estate/owners
 			                               	  	  :fiber/note]))
+
+(s/def :fiber/estate-light       (s/keys :req-un [:estate/_id
+											      :estate/location
+											      :estate/address
+			                        		      :fiber/from-to
+			                        		      :estate/billing-intervals
+			                        		      :fiber/note]))
+
+(s/def :estate/conamount         decimal?)
+(s/def :estate/contax            decimal?)
+(s/def :estate/opamount          decimal?)
+(s/def :estate/optax             decimal?)
+(s/def :estate/payamount         decimal?)
+(s/def :estate/total             decimal?)
+
+(s/def :fiber/estate-sum         (s/keys :req-un [:estate/conamount
+		 										  :estate/contax
+		 										  :estate/opamount
+		 										  :estate/optax
+		 										  :estate/payamount
+		 										  :estate/total]))
 
 ;;------------------------------------------------------------------------------------
 ;; config

@@ -1,53 +1,51 @@
 (ns fiberweb.views.estates
-  	(:require 	(fiberweb 	[db         :as db]
-  							[utils      :as utils])
+  	(:require 	(fiberweb 		[db         :as db]
+  								[utils      :as utils])
   				(fiberweb.views [layout     :as layout]
             					[common     :as common])
- 	          	(garden 	[core       :as g]
-            				[units      :as u]
-            				[selectors  :as sel]
-            				[stylesheet :as ss]
-            				[color      :as color])
-             	(clj-time 	[core       :as t]
-            				[local      :as l]
-            				[format     :as f]
-            				[periodic   :as p])
-            	(hiccup 	[core       :as h]
-            				[def        :as hd]
-            				[element    :as he]
-            				[form       :as hf]
-            				[page       :as hp]
-            				[util       :as hu])
-            	(clojure.java [jdbc :as j])
-            	(clojure 	[string     :as str]
-            				[set        :as set]
-            				[pprint     :as pp])
+ 	          	(garden 		[core       :as g]
+            					[units      :as u]
+            					[selectors  :as sel]
+            					[stylesheet :as ss]
+            					[color      :as color])
+             	(clj-time 		[core       :as t]
+            					[local      :as l]
+            					[format     :as f]
+            					[periodic   :as p])
+            	(hiccup 		[core       :as h]
+            					[def        :as hd]
+            					[element    :as he]
+            					[form       :as hf]
+            					[page       :as hp]
+            					[util       :as hu])
+            	(clojure 		[string     :as str]
+            					[set        :as set]
+            					[pprint     :as pp])
             	[clojure.tools.reader.edn :as edn]))
 
 ;;-----------------------------------------------------------------------------
 
 (defn update-estate
 	[{params :params}]
-	(let [base (select-keys params [:_id :location :address :note])
-		  bis  (edn/read-string (:billing-intervals params))
-		  biy  (utils/param->int params :biyear)
-		  bi   (if (some? (:yearly params)) :yearly :quarterly)
-		  bisn (map #(if (>= (:year %) biy) (assoc % :bi-months bi) %) bis)
-		  ft   (common/extract-ft params (:_id params))]
-		(db/update-estate (assoc base :from-to ft
-					  				  :billing-intervals bisn))))
+	(let [biy (utils/param->int params :biyear)
+		  bi  (if (some? (:yearly params)) :yearly :quarterly)
+		  ubi (fn [x] (map #(if (>= (:year %) biy) (assoc % :interval bi) %) x))]
+		(db/update-estate (-> (db/get-estate (:_id params))
+							  (assoc :location (:location params)
+									 :address  (:address params)
+									 :note     (:note params)
+									 :from-to  (common/extract-ft params (:_id params)))
+							  (update :billing-intervals ubi)))))
 
 ;;-----------------------------------------------------------------------------
 
 (defn edit-estate
 	[estateid]
-	(let [estate (db/get-estate estateid)
-		  owner  (db/get-owner estate)]
+	(let [estate (db/get-estate estateid)]
 		(layout/common "Ändra en Fastighet" []
 		(hf/form-to
 			[:post "/update-estate"]
 			(hf/hidden-field :_id estateid)
-			(hf/hidden-field :billing-intervals (pr-str (:billing-intervals estate)))
 			[:table
 				[:tr
 					[:td [:a.link-head {:href "/"} "Home"]]
@@ -67,7 +65,8 @@
 							[:td (hf/text-field :address (:address estate))]]
 						[:tr
 							[:td (hf/label :xx "Ägare:")]
-							[:td (hf/label :xx (:name owner))]]
+							[:td (hf/label :xx (some-> (utils/find-first #(-> % :from-to :to nil?) (:owners estate))
+													   (get :name)))]]
 						[:tr
 							[:td (hf/label :xx "Notering:")]
 							[:td (hf/text-field :note (:note estate))]]]]]
@@ -79,8 +78,8 @@
 					(let [current (->> (:billing-intervals estate)
 									   (filter #(= (:year %) (utils/current-year)))
 									   first
-									   :bi-months)
-						  bi-s (fn [bi] (str (:year bi) " " (name (:bi-months bi))))]
+									   :interval)
+						  bi-s (fn [bi] (str (:year bi) " " (name (:interval bi))))]
 						[:table
 							[:tr
 								[:th (hf/label :xx "Betalningsinterval")]]
@@ -89,7 +88,7 @@
 									 (filter #(< (:year %) (utils/current-year)))
 									 (sort-by :year)))
 							[:tr
-								[:td (hf/drop-down :biyear (range (utils/current-year) 2030) (utils/current-year))]
+								[:td (hf/drop-down :biyear (range (utils/current-year) config/max-year) (utils/current-year))]
 								[:td (hf/label :xx " och framåt, Helår")]
 								[:td {:width 50} (hf/check-box {:class "cb"} :yearly (= current :yearly))]]])]]
 				[:tr [:td {:height 40}]]
@@ -129,7 +128,7 @@
 					[:tr
 						[:th {:colspan 2} (hf/label :xx "Medlemskapet började")]]
 					[:tr
-						[:td (hf/drop-down :fromyear (range 2017 2031) (utils/current-year))]
+						[:td (hf/drop-down :fromyear (range (utils/current-year) config/max-year) (utils/current-year))]
 						[:td (hf/drop-down :frommonth (range 1 13) (utils/current-month))]]
 					[:tr [:td {:height 40}]]]]]
 			[:tr [:td
@@ -151,7 +150,7 @@
 							:to nil}
 		:activities        nil
 		:billing-intervals (for [year (range (utils/current-year) (inc config/max-year))]
-								{:year year :bi-months (if (some? (:yearly params)) :yearly :quarterly)})
+								{:year year :interval (if (some? (:yearly params)) :yearly :quarterly)})
 		:dcs               []
 		:owners            []
 		:note              (:note params)}))
@@ -188,7 +187,7 @@
 				[:tr [:td {:height 30}]]
 				[:tr
 					[:td (hf/label :xx "Aktiviteter för år")]
-					[:td (hf/drop-down :newyear (range 2013 config/max-year) year)]]
+					[:td (hf/drop-down :newyear (range config/min-year config/max-year) year)]]
 				[:tr
 					[:td (hf/submit-button {:class "button1 button"} "Updatera Året")]]
 				[:tr [:td {:height 30}]]])
@@ -207,15 +206,17 @@
 					]
 				(map (fn [x]
 					[:tr.brdr 
-						[:td.rafield.rpad (hf/label :xx (:_id x))]
-						[:td.ncol         (hf/label :xx (:name x))]
+						[:td.rafield.rpad (hf/label :xx (some-> (utils/find-first #(-> % :from-to :to nil?) (:owners x))
+													   			(get :_id)))]
+						[:td.ncol         (hf/label :xx (some-> (utils/find-first #(-> % :from-to :to nil?) (:owners x))
+													   			(get :name)))]
 						[:td.rafield.rpad (hf/label :xx (:_id x))]
 						[:td.acol         (hf/label :xx (:address x))]
-						[:td.rafield      (hf/label :xx (:bimonths x))]
+						[:td.rafield      (hf/label :xx (get (utils/get-year year (:billing-intervals x)) :interval))]
 						[:td.dcol         (hf/check-box {:class "cb"}
-							(utils/mk-tag (:estateid x) "A") (= (:actmonths x) 4095))]
-						[:td (common/mk-acts (:estateid x) (:actmonths x))]])
-					(db/get-activities year))]
+							(utils/mk-tag (:_id x) "A") (utils/all-months? (get (utils/get-year year (:activities x)) :months)))]
+						[:td (common/mk-acts (:_id x) (get (utils/get-year year (:activities x)) :months))]])
+					(db/get-estates-at year))]
 			[:table
 				[:tr
 					[:td (hf/submit-button {:class "button1 button"} "Updatera aktiviteter")]]])))
