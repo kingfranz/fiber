@@ -8,6 +8,7 @@
                  [garden "1.3.2"]
                  [com.taoensso/timbre "4.10.0"]
                  [clj-pdf "2.2.24"]
+                 [org.clojure/data.json "0.2.6"]
                  [org.clojure/data.csv "0.1.4"]
                  [org.clojure/java.jdbc "0.6.1"]
                  [mysql/mysql-connector-java "6.0.6"]

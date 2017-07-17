@@ -79,6 +79,9 @@
 	(cc/GET "/export-all-pdf" []
 	    (system/export-all-pdf)
 		(ring/redirect "/"))
+	(cc/GET "/export-json" []
+	    (system/export-json)
+		(ring/redirect "/"))
 	(cc/GET "/exit" []
 	    (System/exit 0))
 

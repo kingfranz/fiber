@@ -10,10 +10,12 @@
             					[color      :as color])
              	(clj-time 		[core       :as t]
             					[local      :as l]
+            					[coerce     :as c]
             					[format     :as f]
             					[periodic   :as p])
              	(clj-pdf 		[core       :as pdf])
              	(clojure.data 	[csv        :as csv])
+             	(clojure.data 	[json       :as json])
             	(hiccup 		[core       :as h]
             					[def        :as hd]
             					[element    :as he]
@@ -629,3 +631,135 @@
 	   	]
 	  	"medlemslista.pdf"))
 
+;;-----------------------------------------------------------------------------
+
+(defn months->arr
+	[m]
+	(bits->months m (q->b 0)))
+
+(defn date-frmtr
+	[k v]
+	(if (or (= k :date) (= k :from) (and (= k :to) (some? v)))
+		(str "ISODate('" (f/unparse (f/with-zone (f/formatters :date-time-no-ms) (t/default-time-zone)) v) "')")
+		v))
+
+(defn trans-dc
+	[dc]
+	(let [dc* {
+		 :date    (c/from-sql-time (:date dc))
+		 :amount  (bigdec (:amount dc))
+		 :tax     (bigdec (:tax dc))
+		 :dc-type (keyword (str/replace (:type dc) "-" ""))
+		 :year    (:year dc)}]
+		(if (some? (:months dc))
+			(assoc dc* :months (months->arr (:months dc)))
+			dc*)))
+
+(defn trans-ft
+	[f t]
+	{:from (t/date-time (utils/get-year f) (utils/get-month f) 1)
+	 :to   (when (some? t)
+	 			(t/date-time (utils/get-year t) (utils/get-month t) 1))})
+
+(defn export-mongo-estate
+	[]
+	(let [estates    (db/get-estates)
+		  estatebis  (db/get-estatebi-all)
+		  estateacts (db/get-activities-all)
+		  estatedcs  (db/get-estatedcs-all)
+		  mes        (db/get-membersestates)
+		  members   (db/get-members)]
+		(spit "estates.json" 
+			(str/replace (json/write-str 
+				(vec 
+					(for [estate estates]
+						{:_id               (str "estate-" (:estateid estate))
+						 :location          (:location estate)
+						 :address           (:address estate)
+						 :from-to           (trans-ft (:fromyear estate) (:toyear estate))
+						 :activities        (->> estateacts
+						 						 (filter #(= (:estateid %) (:estateid estate)))
+						 						 (mapv (fn [act] {:year (:year act)
+						 						 				  :months (months->arr (:actmonths act))})))
+						 :billing-intervals (->> estatebis
+						 						 (filter #(= (:estateid %) (:estateid estate)))
+						 						 (mapv (fn [bi] {:year (:year bi)
+						 						 				 :bi-months (if (= (:bimonths bi) 12) :yearly :quarterly)})))
+						 :dcs               (->> estatedcs
+						 						 (filter #(= (:estateid %) (:estateid estate)))
+						 						 (mapv trans-dc))
+						 :owners            (->> mes
+						 						 (filter #(= (:estateid %) (:estateid estate)))
+						 						 (mapv (fn [me] {:_id (str "member-" (:memberid me))
+						 						 				 :name (->> members
+						 						 				 			(filter #(= (:memberid %) (:memberid me)))
+						 						 				 			first
+						 						 				 			:name)
+						 						 				 :from-to (trans-ft (:fromyear me) (:toyear me))})))
+						 :note              (:note estate)}))
+				:value-fn date-frmtr) #"\"ISODate\(([^)]+)\)\"" "ISODate($1)"))))
+
+;"ISODate('2013-01-01T01:00:00+01:00')"
+
+(defn trans-contact
+	[c]
+	{:type (keyword (:type c)) :value (:value c)})
+
+(defn export-mongo-member
+	[]
+	(let [members   (db/get-members)
+		  mes       (db/get-membersestates)
+		  estates    (db/get-estates)
+		  contacts  (db/get-contacts-all)
+		  memberdcs (db/get-memberdcs-all)]
+		(spit "members.json" 
+			(str/replace (json/write-str 
+				(vec 
+					(for [member members
+						:let [conts (->> contacts (filter #(= (:memberid %) (:memberid member))))]]
+			   			{:_id      (str "member-" (:memberid member))
+						 :name     (:name member)
+						 :from-to  (trans-ft (:fromyear member) (:toyear member))
+						 :contacts {:preferred (->> conts
+												   (filter #(= (:preferred %) 1))
+												   first
+												   trans-contact)
+								   :other (->> conts
+								   			   (remove #(= (:preferred %) 1))
+								   			   (mapv trans-contact))}
+						 :estates  (->> mes
+									   (filter #(= (:memberid %) (:memberid member)))
+									   (mapv (fn [me] {:_id (str "estate-" (:estateid me))
+									   			       :address (->> estates
+						 						 					 (filter #(= (:estateid %) (:estateid me)))
+						 						 					 first
+						 						 					 :address)
+						 						 	   :from-to (trans-ft (:fromyear me) (:toyear me))})))
+						 :dcs      (->> memberdcs
+					 				   (filter #(= (:memberid %) (:memberid member)))
+					 				   (mapv trans-dc))
+						 :note     (:note member)}))
+				:value-fn date-frmtr) #"\"ISODate\(([^)]+)\)\"" "ISODate($1)"))))
+
+(defn export-mongo-config
+	[]
+	(spit "configs.json" 
+		(str/replace (json/write-str 
+			(vec 
+				(for [config (db/get-configs)
+					:let [nc (select-keys config [:membershipfee :membershiptax
+		  										   :connectionfee :connectiontax
+		  										   :operatorfee   :operatortax])]]
+					(assoc nc :_id (str (:entered config))
+			 			   	  :from (t/date-time (utils/get-year (:fromyear config)) 
+			 			   		                 (utils/get-month (:fromyear config)) 1))))
+			:value-fn date-frmtr) #"\"ISODate\(([^)]+)\)\"" "ISODate($1)")))
+
+(defn export-json
+	[]
+	(export-mongo-config)
+	(export-mongo-member)
+	(export-mongo-estate)
+	)
+
+;;-----------------------------------------------------------------------------

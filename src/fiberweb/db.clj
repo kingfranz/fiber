@@ -206,6 +206,12 @@
 		(concat (filter #(some #{(:estateid %)} mes) estates)
 				(remove #(some #{(:estateid %)} (set (map :estateid mes*))) estates))))
 
+(defn get-contacts-all
+	[]
+	(j/query fiberdb
+		["select *
+		  from fiberdb.contacts"]))
+
 (defn get-contacts
 	[memberid]
 	(j/query fiberdb
@@ -243,6 +249,12 @@
 		  where memberid = ?
 		  order by date" memberid]))
 
+(defn get-memberdcs-all
+	[]
+	(j/query fiberdb
+		["select *
+		  from fiberdb.memberdcs"]))
+
 (defn get-memberdc
 	[memberid dcid]
 	(j/query fiberdb
@@ -258,6 +270,12 @@
 		  from fiberdb.estatedcs
 		  where estateid = ?" estateid]))
 
+(defn get-estatedcs-all
+	[]
+	(j/query fiberdb
+		["select *
+		  from fiberdb.estatedcs"]))
+
 (defn get-estatedc
 	[estateid dcid]
 	(j/query fiberdb
@@ -272,6 +290,12 @@
 		["select *
 		  from fiberdb.estatebi
 		  where estateid = ?" estateid]))
+
+(defn get-estatebi-all
+	[]
+	(j/query fiberdb
+		["select *
+		  from fiberdb.estatebi"]))
 
 (defn get-estatebi-year
 	[year]
@@ -344,6 +368,12 @@
 		  where fromyear <= ? and (toyear is NULL or toyear >= ?) and
 			    year = ?
 		  order by memberid" year year year]))
+
+(defn get-activities-all
+	[]
+	(j/query fiberdb
+		["select distinct memberid, name, estateid, address, bimonths, actmonths
+		  from fiberdb.estate_usage"]))
 
 (defn get-activities-for
 	[year eid]
@@ -504,4 +534,10 @@
   		  where fromyear <= ?
   		  order by fromyear" year])))
 
+(defn get-configs
+	[]
+	(j/query fiberdb
+  		["select *
+  		  from fiberdb.configs"]))
 
+; mongoimport -u fiberuser -p "kAllE.kUlA399" --authenticationDatabase fiberdb --db fiberdb --file estates.json --drop --jsonArray
