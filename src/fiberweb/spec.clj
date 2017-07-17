@@ -10,7 +10,7 @@
 
 ;;------------------------------------------------------------------------------------
 
-(s/def :fiber/valid-string   (s/and string? seq))
+(s/def :fiber/string         (s/and string? seq))
 (s/def :fiber/valid-month    (s/int-in 1 13))
 (s/def :fiber/date           #(instance? org.joda.time.DateTime %))
 (s/def :fiber/amount         decimal?)
@@ -24,13 +24,13 @@
 ;; contact
 ;;-----------------------------------------------------------------------------
 
-(s/def :addr/value          :fiber/valid-string)
+(s/def :addr/value          :fiber/string)
 (s/def :addr/type           #{:address})
 (s/def :contact/addr-entry  (s/keys :req-un [:addr/type :addr/value]))
-(s/def :email/value         :fiber/valid-string)
+(s/def :email/value         :fiber/string)
 (s/def :email/type          #{:email})
 (s/def :contact/email-entry (s/keys :req-un [:email/type :email/value]))
-(s/def :phone/value    	    :fiber/valid-string)
+(s/def :phone/value    	    :fiber/string)
 (s/def :phone/type     	    #{:phone})
 (s/def :contact/phone-entry (s/keys :req-un [:phone/type :phone/value]))
 (s/def :contact/entry       (s/or :addr  :contact/addr-entry
@@ -50,9 +50,9 @@
 
 (s/def :fiber/from-to   (s/keys :req-un [:fiber/from :fiber/to]))
 
-(s/def :member/estates  (s/* (s/map-of :estate/_id :estate/address :fiber/from-to)))
+(s/def :member/estates  (s/* (s/keys :req-un [:estate/_id :estate/address :fiber/from-to])))
 
-(s/def :member/name     :fiber/valid-string)
+(s/def :member/name     :fiber/string)
 
 (s/def :member/dc-type  #{:membership-fee :payment})
 (s/def :member/dc-entry (s/keys :req-un [:fiber/date
@@ -105,8 +105,8 @@
 
 (s/def :estate/activities        (s/* (s/keys :req-un [:fiber/year :estate/months])))
 
-(s/def :estate/address           :fiber/valid-string)
-(s/def :estate/location          :fiber/valid-string)
+(s/def :estate/address           :fiber/string)
+(s/def :estate/location          :fiber/string)
 
 (s/def :estate/owners            (s/* (s/keys :req-un [:member/_id :member/name :fiber/from-to])))
 

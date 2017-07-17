@@ -1,29 +1,30 @@
 (ns fiberweb.views.common
   	(:require 	(fiberweb.views [layout     :as layout])
- 	          	(fiberweb   [db         :as db]
- 	          				[utils      :as utils]
- 	          				[spec       :as spec])
- 	          	(ring.util 	[response   :as ring])
-                (garden 	[core       :as g]
-            				[units      :as u]
-            				[selectors  :as sel]
-            				[stylesheet :as ss]
-            				[color      :as color])
-             	(clj-time 	[core       :as t]
-            				[local      :as l]
-            				[coerce     :as c]
-            				[format     :as f]
-            				[periodic   :as p])
-            	(hiccup 	[core       :as h]
-            				[def        :as hd]
-            				[element    :as he]
-            				[form       :as hf]
-            				[page       :as hp]
-            				[util       :as hu])
-            	(clojure 	[string     :as str]
-            				[set        :as set]
-            				[edn        :as edn]
-            				[spec       :as s])))
+ 	          	(fiberweb   	[db         :as db]
+ 	          					[utils      :as utils]
+ 	          					[config     :as config]
+ 	          					[spec       :as spec])
+ 	          	(ring.util 		[response   :as ring])
+                (garden 		[core       :as g]
+            					[units      :as u]
+            					[selectors  :as sel]
+            					[stylesheet :as ss]
+            					[color      :as color])
+             	(clj-time 		[core       :as t]
+            					[local      :as l]
+            					[coerce     :as c]
+            					[format     :as f]
+            					[periodic   :as p])
+            	(hiccup 		[core       :as h]
+            					[def        :as hd]
+            					[element    :as he]
+            					[form       :as hf]
+            					[page       :as hp]
+            					[util       :as hu])
+            	(clojure 		[string     :as str]
+            					[set        :as set]
+            					[edn        :as edn]
+            					[spec       :as s])))
 
 ;;-----------------------------------------------------------------------------
 
@@ -66,11 +67,11 @@
 		[:tr
 			[:td.rafield.rpad (hf/label :xx id)]
 			[:td (hf/drop-down (utils/mk-tag "fromyear" id) 
-							   (range 2013 2031) 
-							   (utils/get-year (:fromyear m)))]
+							   config/year-range
+							   (-> m :from-to :from t/year))]
 			[:td (hf/drop-down (utils/mk-tag "frommonth" id) 
-							   (range 1 13)
-							   (utils/get-month (:fromyear m)))]
+							   config/month-range
+							   (-> m :from-to :from t/month))]
 
 			[:td (hf/check-box {:class "cb"
 								:onclick (str "toggleText('" (utils/mk-tag "endtag" id) "','" 
@@ -79,22 +80,22 @@
 							   (utils/mk-tag "endtag" id) 
 							   (some? (:toyear m)))]
 			
-			[:td (hf/drop-down {:disabled (when (nil? (:toyear m)) "disabled")}
+			[:td (hf/drop-down {:disabled (when (-> m :from-to :to nil?) "disabled")}
 							   (utils/mk-tag "toyear" id) 
-							   (range 2013 2031) 
-							   (utils/get-year (:toyear m)))]
-			[:td (hf/drop-down {:disabled (when (nil? (:toyear m)) "disabled")}
+							   config/year-range
+							   (some-> m :from-to :to t/year))]
+			[:td (hf/drop-down {:disabled (when (-> m :from-to :to nil?) "disabled")}
 							   (utils/mk-tag "tomonth" id) 
-							   (range 1 13) 
-							   (utils/get-month (:toyear m)))]]])
+							   config/month-range
+							   (some-> m :from-to :to t/month))]]])
 
 (defn extract-ft
 	[params id]
-	{:from (t/date-time (utils/get-year (get params (utils/mk-tag "fromyear" id)))
-						(utils/get-month (get params (utils/mk-tag "frommonth" id))) 1)
+	{:from (t/date-time (Integer/valueOf (get params (utils/mk-tag "fromyear" id)))
+						(Integer/valueOf (get params (utils/mk-tag "frommonth" id))) 1)
 	 :to   (when (some? (get params (utils/mk-tag "endtag" id)))
-	 			(t/date-time (utils/get-year (get params (utils/mk-tag "toyear" id)))
-	 						 (utils/get-month (get params (utils/mk-tag "tomonth" id))) 1))}))
+	 			(t/date-time (Integer/valueOf (get params (utils/mk-tag "toyear" id)))
+	 						 (Integer/valueOf (get params (utils/mk-tag "tomonth" id))) 1))})
 
 ;;-----------------------------------------------------------------------------
 
@@ -102,20 +103,27 @@
 	[eid months]
 	[:table
 		[:tr
-			(for [i (range 1 13)]
+			(for [i config/month-range]
 				[:td {:width 30} (hf/check-box {:class "cb"} (utils/mk-tag eid i) (some #{i} months))])]])
+(s/fdef mk-acts
+	:args (s/cat :eid :estate/_id :months :estate/months))
 
 (defn show-acts
 	[months]
 	[:table
 		[:tr
-			(map (fn [i] [:td {:width 30} (when (some #{i} months) "X")]) (range 1 13))]])
+			(map (fn [i] [:td {:width 30} (when (some #{i} months) "X")]) config/month-range)]])
+(s/fdef show-acts
+	:args :estate/months)
 
 (defn get-months
 	[id params]
-	(set (for [i (range 1 13)
+	(set (for [i config/month-range
 		:when (some? (get params (utils/mk-tag id i)))]
 		i)))
+(s/fdef get-months
+	:args (s/cat :id :estate/_id :params map?)
+	:ret  :estate/months)
 
 ;;-----------------------------------------------------------------------------
 
@@ -187,13 +195,13 @@
 (defn new-dc
 	[params]
 	(let [dc {:date    (f/parse (:date params))
-		      :dc-type (get (if (member? id) imemberdc-map iestatedc-map) (:dc-type params))
+		      :dc-type (get (if (member? (:_id params)) imemberdc-map iestatedc-map) (:dc-type params))
 		      :amount  (utils/param->bigdec params :amount)
 		      :tax     (utils/param->bigdec params :tax)
 		      :year    (utils/param->int params :year)}]
 		(if (member? (:_id params))
 			(db/add-memberdc (:_id params) dc)
-			(db/add-estatedc (:_id params) (assoc dc :months (get-months id params))))
+			(db/add-estatedc (:_id params) (assoc dc :months (get-months (:_id params) params))))
 		(ring/redirect (str "/edit/" (:_id params)))))
 
 ;;-----------------------------------------------------------------------------

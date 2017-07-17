@@ -23,7 +23,6 @@
             					[util       :as hu])
             	(taoensso 		[timbre     :as timbre])
             	(clojure.java 	[io         :as io])
-            	(clojure.data 	[json       :as json])
             	(clojure 		[string     :as str]
             					[spec       :as s]
             					[set        :as set])))
@@ -68,7 +67,7 @@
 					[:td.rafield.rpad.brdr (hf/label :xx (:_id x))]
 					[:td.txtcol.brdr       (hf/label {:class "txtcol"} :xx (:name x))]
 					[:td.dcol.brdr         (hf/label :xx (utils/year-month (:from (:from-to x))))]
-					[:td.brdr.ccol         (hf/label :xx (-> x :contacts :preferred :value)]
+					[:td.brdr.ccol         (hf/label :xx (-> x :contacts :preferred :value))]
 					[:td.brdr.ccol         (hf/label :xx (-> x :contacts :other first :value))]
 					[:td.brdr              (hf/label :xx (:note x))]])
 			(db/get-members))]))
@@ -81,7 +80,7 @@
 				  ee (assoc (select-keys estate [:_id :location :address :from-to])
 				  			:bi-months (:bi-months (utils/get-year (utils/current-year) (:billing-intervals estate))))]
 			:when (-> m-estate :from-to :to nil?)]
-			(assoc (dissoc member :estates) :estate ee)))
+			(assoc (dissoc member :estates) :estate ee))))
 
 (defn mk-all-lst
 	[]

@@ -1,6 +1,7 @@
 (ns fiberweb.views.members
   	(:require 	(fiberweb 		[db         :as db]
-  								[utils      :as utils])
+  								[utils      :as utils]
+  								[config     :as config])
   				(fiberweb.views [layout     :as layout]
             					[common     :as common])
  	          	(garden 		[core       :as g]
@@ -87,7 +88,7 @@
 					(for [i (range 6)] (contact-row i (:contacts member)))]]]
 			[:tr [:td {:height 40}]]
 			[:tr [:td
-				(common/mk-dc-section memberid dcs true)]]]))))
+				(common/mk-dc-section memberid (:dcs member) true)]]]))))
 
 (defn new-member
 	[eid]
@@ -118,8 +119,8 @@
 					[:tr
 						[:th {:colspan 2} (hf/label :xx "Medlemskapet börjar")]]
 					[:tr
-						[:td (hf/drop-down (utils/mk-tag "fromyear" "X") (range (utils/current-year) config/max-year) (utils/current-year))]
-						[:td (hf/drop-down (utils/mk-tag "frommonth" "X") (range 1 13) (utils/current-month))]]]]]
+						[:td (hf/drop-down (utils/mk-tag "fromyear" "X") (utils/curr-year-range) (utils/current-year))]
+						[:td (hf/drop-down (utils/mk-tag "frommonth" "X") config/month-range (utils/current-month))]]]]]
 			[:tr [:td {:height 40}]]
 			[:tr [:td
 				[:table
@@ -200,7 +201,7 @@
 												 (str "/add-estate/" memberid "/" (:_id x))
 												 (str "/new-member/" (:_id x)))}
 									  (hf/label :xx (:address x))]]])
-				(db/get-avail-estates))]))
+				(get-avail-estates))]))
 
 (defn choose-member
 	[]

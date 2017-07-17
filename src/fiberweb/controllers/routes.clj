@@ -80,12 +80,6 @@
 	(cc/GET "/export-all-pdf" []
 	    (export/export-all-pdf)
 		(ring/redirect "/"))
-	(cc/GET "/export-json" []
-	    (export/export-mongo)
-		(ring/redirect "/"))
-	(cc/GET "/export-json" []
-	    (system/export-json)
-		(ring/redirect "/"))
 	(cc/GET "/exit" []
 	    (System/exit 0))
 

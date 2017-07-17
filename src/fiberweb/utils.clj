@@ -17,7 +17,9 @@
             				[util       :as hu])
             	(clojure 	[string     :as str]
             				[set        :as set]
-            				[spec       :as s])))
+            				[spec       :as s])
+            	(fiberweb 	[spec 		:as spec]
+            				[config     :as config])))
 
 ;;-----------------------------------------------------------------------------
 
@@ -29,8 +31,12 @@
 	(prn "spy:" t x)
 	x))
 
-(defn drop-nth [n coll]
+(defn drop-nth
+	[n coll]
 	(vec (keep-indexed #(when (not= %1 n) %2) coll)))
+(s/fdef drop-nth
+	:args (s/cat :n integer? :coll coll?)
+	:ret  coll?)
 
 (defn find-first
 	[f coll]
@@ -48,6 +54,10 @@
 	[]
 	(nth [0 1 1 1 2 2 2 3 3 3 4 4 4] (current-month)))
 
+(defn curr-year-range
+	[]
+	(range (current-year) (inc config/max-year)))
+
 (defn now-str
     []
     (f/unparse (f/with-zone (f/formatters :mysql) (t/default-time-zone)) (l/local-now)))
@@ -60,15 +70,6 @@
     [dt]
     (f/unparse (f/with-zone (f/formatters :year-month) (t/default-time-zone)) dt))
 
-(defn same-submap?
-	[m1 m2]
-	(let [m1-ks (set (keys m1))
-		  m2-ks (set (keys m2))
-		  inter (set/intersection m1-ks m2-ks)
-		  m1i   (apply dissoc m1 (set/difference m1-ks inter))
-		  m2i   (apply dissoc m2 (set/difference m2-ks inter))]
-		(and (= m1i m2i) (seq m1i))))
-
 (defn b->n
 	[x]
 	(when (seq x) x))
@@ -80,18 +81,37 @@
 (defn param->bigdec
 	[params tag]
 	(some->> tag (get params) b->n BigDecimal.))
+(s/fdef param->bigdec
+	:args (s/cat :params map? :tag keyword?)
+	:ret  (s/nilable decimal?))
 
 (defn param->int
 	[params tag]
 	(some->> tag (get params) b->n Integer/valueOf))
+(s/fdef param->int
+	:args (s/cat :params map? :tag keyword?)
+	:ret  (s/nilable integer?))
 
 (defn param->double
 	[params tag]
 	(some->> tag (get params) b->n Double/valueOf))
+(s/fdef param->double
+	:args (s/cat :params map? :tag keyword?)
+	:ret  (s/nilable float?))
 
 (defn ts->d
 	[ts]
 	(f/unparse (f/formatters :date) ts))
+(s/fdef ts->d
+	:args #(instance? org.joda.time.DateTime %)
+	:ret  string?)
+
+(defn get-year
+	[year mcoll]
+	(find-first #(= (:year %) year) mcoll))
+(s/fdef get-year
+	:args (s/cat :year :fiber/year :mcoll (s/* map?))
+	:ret  map?)
 
 ;;-----------------------------------------------------------------------------
 
@@ -103,8 +123,8 @@
 		  					 (or (nil? to) (t/within? whole-year to))))]
 		(year-match ft)))
 	([ft y m d]
-	(let [ftomto (t/interval (:from ft) (or (:to ft) (l/local-now)))]
-		(t/within fromto (t/date-time y m d)))))
+	(let [fromto (t/interval (:from ft) (or (:to ft) (l/local-now)))]
+		(t/within? fromto (t/date-time y m d)))))
 (s/fdef within
 	:args (s/alt :year (s/cat :ft :fiber/from-to :y :fiber/year)
 				 :ymd  (s/cat :ft :fiber/from-to :y :fiber/year
@@ -115,5 +135,5 @@
 	[months]
 	(= months #{1 2 3 4 5 6 7 8 9 10 11 12}))
 (s/fdef all-months?
-	:args :fiber/months
+	:args :estate/months
 	:ret  boolean?)

@@ -1,6 +1,8 @@
 (ns fiberweb.views.system
   	(:require 	(fiberweb 		[db         :as db]
-  								[utils      :as utils])
+  								[utils      :as utils]
+  								[spec       :as spec]
+  								[config     :as config])
   				(fiberweb.views [layout     :as layout]
             					[common     :as common])
  	          	(garden 		[core       :as g]
@@ -93,7 +95,7 @@
 (defn get-usage-data
 	[year quarter y-or-q]
 	(let [months (set (range 1 (inc (* quarter 3))))]
-		(->> (get-estates)
+		(->> (db/get-estates)
 			 (filter #(utils/within (:from-to %) year))
 			 (filter (fn [e] (= (get (utils/get-year year (:billing-intervals e)) :interval) y-or-q)))
 			 (filter (fn [e] (not-empty (set/intersection months (get (utils/get-year year (:activities e)) :months)))))
@@ -133,7 +135,7 @@
 					[:td [:a.link-head {:href "/"} "Home"]]]
 				[:tr
 					[:td (hf/label :xx "Medlemsavgifter för år")]
-					[:td (hf/drop-down :newyear (range config/min-year config/max-year) year)]
+					[:td (hf/drop-down :newyear config/year-range year)]
 					[:td (hf/submit-button {:class "button1 button"} "Updatera")]]])
 		[:table
 			[:tr
@@ -152,71 +154,98 @@
 				[:td.rafield.tafield {:width 100} (hf/label :xx (:amount x))]
 				[:td.rafield.tafield {:width 100} (hf/label :xx (:tax x))]
 				[:td.rafield.tafield {:width 100} (hf/label :xx (:total x))]
-				]) (db/get-membership-data year))]))
+				]) (get-membership-data year))]))
 
-(defn mk-months-upto
+(defn months-upto
 	[quarter]
-	(if (zero? quarter)
-		0
-		(+ (utils/q->b quarter) (mk-months-upto (dec quarter)))))
+	(set (range 1 (inc (* quarter 3)))))
+(s/fdef months-upto
+	:args (s/int-in 1 5)
+	:ret  :estate/months)
+
+(defn get-interval
+	[estate year]
+	(->> estate
+		 :billing-intervals
+		 (utils/get-year year)
+		 :interval))
+(s/fdef get-interval
+	:args (s/cat :estate :fiber/estate :year :fiber/year)
+	:ret   :estate/interval)
 
 (defn get-edcs
-	[id year qmonths dc-type]
-	(->> (db/get-estatedcs id)
+	[estate year qmonths dc-type]
+	(->> estate
+		 :dcs
 		 (filter #(and (= (:year %) year)
-					   (= (:type %) dc-type)
-				       (not (zero? (bit-and (:months %) qmonths)))))
-		 (map #(utils/bit->month (:months %)))))
+					   (= (:dc-type %) dc-type)
+				       (seq (set/intersection (:months %) qmonths))))
+		 (map #(set/intersection (:months %) qmonths))
+		 (reduce set/union #{})))
+(s/fdef get-edcs
+	:args (s/cat :estate :fiber/estate :year :fiber/year :qmonths :estate/months :dc-type :estate/dc-type)
+	:ret  :estate/months)
 
 (defn update-estate-q-fixed
-	[year quarter yearly?]
-	(let [eids   (->> (db/get-estatebi-year year)
-					  (filter #(= (:bimonths %) (if yearly? 12 3)))
-					  (map :estateid))
-		  qmonths (mk-months-upto quarter)
-	      efees  (map (fn [id] {:id id :dcs (get-edcs id year qmonths "connection-fee")}) eids)
-	      eowe   (remove #(= (count (:dcs %)) (* quarter 3)) efees)
+	[year quarter y-or-q]
+	(let [qmonths (months-upto quarter)
+	      eowe    (->> (db/get-estates-at year)
+					   (filter #(= (get-interval % year) y-or-q))
+					   (map (fn [e] {:_id (:_id e) :dcs (get-edcs e year qmonths :connection-fee)}))
+	    			   (remove #(= (count (:dcs %)) (count qmonths))))
 	      config (db/get-config-at year)]
         (doseq [e eowe]
-        	(doseq [m (range 1 13)
-        		:when (not (some #{m} (set (:dcs e))))]
-        		(db/add-estatedc {:amount   (:connectionfee config)
-        						  :tax      (:connectionfee config)
-        						  :type     "connection-fee"
-        						  :year     year
-        						  :months   (utils/month->bit m)
-        						  :estateid (:id e)})))))
+        	(doseq [m qmonths
+        		:when (not (some #{m} (:dcs e)))]
+        		(db/add-estatedc (:_id e)
+        			{:date     (l/local-now)
+        			 :amount   (:connectionfee config)
+        			 :tax      (:connectionfee config)
+        			 :type     :connection-fee
+        			 :year     year
+        			 :months   #{m}})))))
+(s/fdef update-estate-q-fixed
+	:args (s/cat :year :fiber/year :quarter (s/int-in 1 5) :y-or-q :estate/interval))
+
+(defn get-activities-for
+	[estate year qmonths]
+	(->> estate
+		 :activities
+		 (utils/get-year year)
+		 :months
+		 (set/intersection qmonths)))
+(s/fdef get-activities-for
+	:args (s/cat :estate :fiber/estate :year :fiber/year :qmonths :estate/months)
+	:ret  :estate/months)
 
 (defn update-estate-q-activity
-	[year quarter yearly?]
-	(let [eids   (->> (db/get-estatebi-year year)
-					  (filter #(= (:bimonths %) (if yearly? 12 3)))
-					  (map :estateid))
-	      qmonths (mk-months-upto quarter)
-	      efees  (map (fn [id] {:id   id
-	      						:dcs  (get-edcs id year qmonths "operator-fee")
-	      						:acts (utils/bits->months (db/get-activities-for year id) qmonths)}) eids)
-	      eowe   (remove #(= (count (:dcs %)) (count (:acts %))) efees)
+	[year quarter y-or-q]
+	(let [qmonths (months-upto quarter)
+	      eowe    (->> (db/get-estates-at year)
+					   (filter #(= (get-interval % year) y-or-q))
+					   (map (fn [e] {:id   (:_id e)
+	      							 :dcs  (get-edcs e year qmonths :operator-fee)
+	      							 :acts (get-activities-for e year qmonths)}))
+	    			   (remove #(= (count (:dcs %)) (count (:acts %)))))
 	      config (db/get-config-at year)]
         (doseq [e eowe]
-        	(doseq [m (range 1 13)
+        	(doseq [m qmonths
         		:when (and (not (some #{m} (set (:dcs e))))
         				   (some #{m} (set (:acts e))))]
-        		(db/add-estatedc {:amount   (:operatorfee config)
-        						  :tax      (:operatorfee config)
-        						  :type     "operator-fee"
-        						  :year     year
-        						  :months   (utils/month->bit m)
-        						  :estateid (:id e)})))))
-
-(defn update-estates-quarter
-	[year quarter]
-	(update-estate-q-fixed year quarter false)
-	(update-estate-q-activity year quarter false))
+        		(db/add-estatedc (:_id e)
+        			{:date     (l/local-now)
+        			 :amount   (:operatorfee config)
+        			 :tax      (:operatorfee config)
+        			 :type     :operator-fee
+        			 :year     year
+        			 :months   #{m}})))))
+(s/fdef update-estate-q-activity
+	:args (s/cat :year :fiber/year :quarter (s/int-in 1 5) :y-or-q :estate/interval))
 
 (defn invoice-quarter
 	[year quarter]
-	(update-estates-quarter year quarter)
+	(update-estate-q-fixed year quarter :quaterly)
+	(update-estate-q-activity year quarter :quaterly)
 	(layout/common (str "Användningsavgifter " year " Q" quarter) []
 		(hf/form-to
 			[:post "/invoice/quarter"]
@@ -229,7 +258,7 @@
 				[:tr [:td {:height 10}]]
 				[:tr
 					[:td {:width 100} (hf/label :xx "För år")]
-					[:td.rafield (hf/drop-down :newyear (range 2010 2020) year)]
+					[:td.rafield (hf/drop-down :newyear config/year-range year)]
 					[:td {:width 30}]
 					[:td {:rowspan 2} (hf/submit-button {:class "button1 button"} "Updatera")]]
 				[:tr
@@ -250,26 +279,23 @@
 			]
 			(map (fn [x]
 				[:tr
-				[:td.rafield.rpad.tafield (hf/label :xx (:memberid x))]
-				[:td.udpad.tafield {:width 400} (hf/label :xx (:name x))]
-				[:td.udpad.tafield {:width 300} (hf/label :xx (:address x))]
-				[:td.udpad.tafield {:width 250} (hf/label :xx (:contact x))]
-				[:td.rafield.tafield {:width 120} (hf/label :xx (:conamount x))]
-				[:td.rafield.tafield {:width 120} (hf/label :xx (str "(" (:contax x) ")"))]
-				[:td.rafield.tafield {:width 120} (hf/label :xx (:opamount x))]
-				[:td.rafield.tafield {:width 120} (hf/label :xx (str "(" (:optax x) ")"))]
-				[:td.rafield.tafield {:width 100} (hf/label :xx (:payamount x))]
-				[:td.rafield.tafield {:width 100} (hf/label :xx (:total x))]
-				]) (db/get-usage-data year (utils/q->b quarter) 3))]))
-
-(defn update-estates-yearly
-	[year]
-	(update-estate-q-fixed year 4 true)
-	(update-estate-q-activity year 4 true))
+					[:td.rafield.rpad.tafield         (hf/label :xx (:memberid x))]
+					[:td.udpad.tafield {:width 400}   (hf/label :xx (:name x))]
+					[:td.udpad.tafield {:width 300}   (hf/label :xx (:address x))]
+					[:td.udpad.tafield {:width 250}   (hf/label :xx (:contact x))]
+					[:td.rafield.tafield {:width 120} (hf/label :xx (:conamount x))]
+					[:td.rafield.tafield {:width 120} (hf/label :xx (str "(" (:contax x) ")"))]
+					[:td.rafield.tafield {:width 120} (hf/label :xx (:opamount x))]
+					[:td.rafield.tafield {:width 120} (hf/label :xx (str "(" (:optax x) ")"))]
+					[:td.rafield.tafield {:width 100} (hf/label :xx (:payamount x))]
+					[:td.rafield.tafield {:width 100} (hf/label :xx (:total x))]
+				])
+				(get-usage-data year quarter :quarterly))]))
 
 (defn invoice-yearly
 	[year]
-	(update-estates-yearly year)
+	(update-estate-q-fixed year 4 :yearly)
+	(update-estate-q-activity year 4 :yearly)
 	(layout/common (str "Användningsavgifter " year) []
 		(hf/form-to
 			[:post "/invoice/yearly"]
@@ -282,7 +308,7 @@
 				[:tr [:td {:height 5}]]
 				[:tr
 					[:td (hf/label :xx "För år")]
-					[:td (hf/drop-down :newyear (range 2013 2030) year)]
+					[:td (hf/drop-down :newyear config/year-range year)]
 					[:td (hf/submit-button {:class "button1 button"} "Updatera")]]
 				[:tr [:td {:height 10}]]])
 		[:table {:border 1 :color :grey}
@@ -298,17 +324,18 @@
 			]
 			(map (fn [x]
 				[:tr
-				[:td.rafield.rpad.tafield (hf/label :xx (:_id x))]
-				[:td.udpad.tafield {:width 400} (hf/label :xx (:name x))]
-				[:td.udpad.tafield {:width 300} (hf/label :xx (:address x))]
-				[:td.udpad.tafield {:width 250} (hf/label :xx (:contact x))]
-				[:td.rafield.tafield {:width 120} (hf/label :xx (:conamount x))]
-				[:td.rafield.tafield {:width 120} (hf/label :xx (str "(" (:contax x) ")"))]
-				[:td.rafield.tafield {:width 120} (hf/label :xx (:opamount x))]
-				[:td.rafield.tafield {:width 120} (hf/label :xx (str "(" (:optax x) ")"))]
-				[:td.rafield.tafield {:width 100} (hf/label :xx (:payamount x))]
-				[:td.rafield.tafield {:width 100} (hf/label :xx (:total x))]
-				]) (db/get-usage-data year (utils/q->b 0) 12))]))
+					[:td.rafield.rpad.tafield         (hf/label :xx (:_id x))]
+					[:td.udpad.tafield {:width 400}   (hf/label :xx (:name x))]
+					[:td.udpad.tafield {:width 300}   (hf/label :xx (:address x))]
+					[:td.udpad.tafield {:width 250}   (hf/label :xx (:contact x))]
+					[:td.rafield.tafield {:width 120} (hf/label :xx (:conamount x))]
+					[:td.rafield.tafield {:width 120} (hf/label :xx (str "(" (:contax x) ")"))]
+					[:td.rafield.tafield {:width 120} (hf/label :xx (:opamount x))]
+					[:td.rafield.tafield {:width 120} (hf/label :xx (str "(" (:optax x) ")"))]
+					[:td.rafield.tafield {:width 100} (hf/label :xx (:payamount x))]
+					[:td.rafield.tafield {:width 100} (hf/label :xx (:total x))]
+				])
+				(get-usage-data year 4 :yearly))]))
 
 ;;-----------------------------------------------------------------------------
 
@@ -318,19 +345,14 @@
 		 (map (fn [e] (utils/find-first #(= (:_id %) (:_id e)) estates)))
 		 (remove (fn [e] (or (nil? e) (= (:total e) 0M))))))
 
-(defn e-sum
-	[estates]
-	(if (empty? estates)
-		0M
-		(reduce + 0M (map :total estates))))
-
 (defn mk-rows
 	[year]
-	(let [members  (get-membership-data year)
-		  estates  (merge (get-usage-data year 4 :yearly)
+	(let [estates  (merge (get-usage-data year 4 :yearly)
 		  				  (get-usage-data year 4 :quarterly))
-		  m-and-e* (map (fn [m] (update m :estates (fn [est] (swap-estate est estates)))) members)
-		  m-and-e  (remove (fn [m] (and (= (:total m) 0M) (= (e-sum (:estates m)) 0M))) m-and-e)]
+		  m-and-e  (->> (get-membership-data year)
+		  				(map (fn [m] (update m :estates (fn [est] (swap-estate est estates)))))
+		  			    (remove (fn [m] (and (= (:total m) 0M)
+		  									 (= (reduce + 0M (map :total (:estates m))) 0M)))))]
 		(flatten
 			(map (fn [m] [
 				{:_id     (:_id m)
@@ -373,7 +395,7 @@
         	[:table
 				[:tr
 					[:td (hf/label :xx "Inbetalningar för år")]
-					[:td (hf/drop-down :newyear (range 2010 2020) year)]
+					[:td (hf/drop-down :newyear config/year-range year)]
 					[:td (hf/submit-button {:class "button1 button"} "Updatera")]]
 				[:tr [:td {:height 10}]]])
 		(hf/form-to
@@ -423,22 +445,18 @@
 
 (defn update-payment
 	[{params :params}]
-	(let [m-vals (->> params
-		              (filter #(re-matches spec/memberid-regex (name (key %))))
+	(let [values (fn [id-rx] (->> params
+		              (filter #(re-matches id-rx (name (key %))))
 		              (map (fn [me] {:_id (key me) :amount (when (seq (val me)) (BigDecimal. (val me)))}))
-		              (remove #(nil? (:amount %))))
-		  e-vals (->> params
-		              (filter #(re-matches spec/estateid-regex (name (key %))))
-		              (map (fn [me] {:_id (key me) :amount (when (seq (val me)) (BigDecimal. (val me)))}))
-		              (remove #(nil? (:amount %))))]
-		(doseq [m-entry m-vals]
+		              (remove #(nil? (:amount %)))))]
+		(doseq [m-entry (values spec/memberid-regex)]
 			(db/add-member-payment (:_id m-entry)
 								   (:amount m-entry)
-								   (Integer/valueOf (:current-year params))))
-		(doseq [e-entry e-vals]
+								   (utils/param->int params :current-year)))
+		(doseq [e-entry (values spec/estateid-regex)]
 			(db/add-estate-payment (:_id e-entry)
 								   (:amount e-entry)
-								   (Integer/valueOf (:current-year params))))
+								   (utils/param->int params :current-year)))
 		))
 
 ;;-----------------------------------------------------------------------------
@@ -476,8 +494,8 @@
 				[:tr [:td {:height 40}]]
 				[:tr
 					[:td.txtcol (hf/label :xx "Gäller från")]
-					[:td.valcol (hf/drop-down :fromyear (range 2017 2031) (utils/current-year))]
-					[:td.valcol (hf/drop-down :frommonth (range 1 13) (utils/current-month))]]
+					[:td.valcol (hf/drop-down :fromyear (utils/curr-year-range) (utils/current-year))]
+					[:td.valcol (hf/drop-down :frommonth config/month-range (utils/current-month))]]
 				[:tr [:td {:height 40}]]
 				[:tr
 					[:td {:colspan 3} (hf/submit-button {:class "button1 button"} "Lägg till konfiguration")]]])))
@@ -490,7 +508,7 @@
 		  			:connectiontax (/ (BigDecimal. (:connection-tax params)) 100M)
 		  			:operatorfee   (BigDecimal.    (:operator-fee params))
 		  			:operatortax   (/ (BigDecimal. (:operator-tax params)) 100M)
-		  			:fromyear      (utils/ym->f (:fromyear params) (:frommonth params))}))
+		  			:fromyear      (t/date-time (:fromyear params) (:frommonth params) 1)}))
 
 ;;-----------------------------------------------------------------------------
 

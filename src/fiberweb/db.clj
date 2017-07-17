@@ -14,9 +14,10 @@
             					[form       	:as hf]
             					[page       	:as hp]
             					[util       	:as hu])
-            	(taoensso 		[timbre     	:as timbre])
+            	(taoensso 		[timbre     	:as log])
             	(fiberweb		[spec       	:as spec]
-            					[utils      	:as utils])
+            					[utils      	:as utils]
+            					[config         :as config])
             	(cheshire 		[core     		:refer :all])
 				(monger 		[core     		:as mg]
             					[credentials 	:as mcr]
@@ -39,19 +40,18 @@
 
 ;;-----------------------------------------------------------------------------
 
-(s/fdef fname
-	:args (s/cat :s :shop/string)
-	:ret :shop/string)
-
 ;monger.collection$find_one_as_map@5f2b4e24users
 (defn fname
 	[s]
 	(second (re-matches #"^[^$]+\$(.+)@.+$" (str s))))
+(s/fdef fname
+	:args (s/cat :s :fiber/string)
+	:ret :fiber/string)
 
 (defn- do-mc
 	[mc-func caller tbl & args]
 	(log/trace (apply str caller ": " (fname mc-func) " " tbl " " (first args)))
-	(let [ret (apply mc-func shopdb tbl (first args))]
+	(let [ret (apply mc-func fiberdb tbl (first args))]
 		(log/trace caller "returned:" (pr-str ret))
 		ret))
 
@@ -93,14 +93,14 @@
 
 ;;-----------------------------------------------------------------------------
 
-(s/fdef mk-enlc :args :shop/string :ret :shop/string)
+(s/fdef mk-enlc :args :fiber/string :ret :fiber/string)
 
 (defn mk-enlc
 	[en]
 	(-> en str/trim str/lower-case (str/replace #"[ \t-]+" " ")))
 
 (s/fdef get-by-enlc
-	:args (s/cat :tbl :shop/string :en :shop/string)
+	:args (s/cat :tbl :fiber/string :en :fiber/string)
 	:ret (s/nilable map?))
 
 (defn get-by-enlc
@@ -133,8 +133,8 @@
 
 (defn update-estate
 	[estate-part]
-	(mc-update-by-id "update-estate" estates (:_id estate)
-		{$set (dissoc estate :_id)}))
+	(mc-update-by-id "update-estate" estates (:_id estate-part)
+		{$set (dissoc estate-part :_id)}))
 (s/fdef update-estate
 	:args :fiber/estate-light)
 
@@ -142,19 +142,23 @@
 	[eid dc]
 	(mc-update-by-id "add-estatedc" estates eid
 		{$push {:dcs dc}}))
+(s/fdef add-estatedc
+	:args (s/cat :eid :estate/_id :dc :estate/dc-entry))
 
 (defn delete-estatedc
 	[eid idx]
-	(let [dcs     (mc-find-map-by-id "delete-estatedc" estates eid [dcs])
+	(let [dcs     (mc-find-map-by-id "delete-estatedc" estates eid ["dcs"])
 		  new-dcs (utils/drop-nth idx dcs)]
 		(mc-update-by-id "delete-estatedc" estates eid
 			{$set {:cs new-dcs}})))
+(s/fdef delete-estatedc
+	:args (s/cat :eid :estate/_id :idx integer?))
 
 (defn get-estate
 	[id]
 	(mc-find-map-by-id "get-estate" estates id))
 (s/fdef get-estate
-	:args :estate/estateid
+	:args :estate/_id
 	:ret  :fiber/estate)
 
 (defn get-estates
@@ -181,24 +185,23 @@
 	:ret  (s/* :fiber/estate))
 
 (defn update-activity
-	[eid year months]
-	(mc-update "update-activity" estates
-		{:_id eid :activities.year year}
-		{$set {:activities.$.months months}}))
+	[eid acts]
+	(mc-update-by-id "update-activity" estates eid
+		{$set {:activities acts}}))
 (s/fdef update-activity
-	:args (s/cat :eid :estate/estateid :year :fiber/year :months :fiber/months))
+	:args (s/cat :eid :estate/_id :acts :estate/activities))
 
 (defn add-estate-payment
-	[estateid amount year]
-	(mc-update-by-id "add-estate-payment" estates estateid
+	[eid amount year]
+	(mc-update-by-id "add-estate-payment" estates eid
 		{$set {:date   (l/local-now)
 			   :amount amount
 		 	   :tax    0M
 			   :type   :payment
 			   :year   year
-			   :months (set (range 1 13))}}))
+			   :months (set config/month-range)}}))
 (s/fdef add-estate-payment
-	:args (s/cat :estateid :estate/estateid :amount :fiber/amount :year :fiber/year))
+	:args (s/cat :eid :estate/_id :amount :fiber/amount :year :fiber/year))
 
 ;;-----------------------------------------------------------------------------
 ;; member
@@ -207,7 +210,7 @@
 	[mid]
 	(some? (mc-find-one-as-map "memberid-exists?" fiberdb mid)))
 (s/fdef memberid-exists?
-	:args :fiber/memberid
+	:args :member/_id
 	:ret  boolean?)
 
 (defn member-count
@@ -220,13 +223,17 @@
 	[mid dc]
 	(mc-update-by-id "add-memberdc" members mid
 		{$push {:dcs dc}}))
+(s/fdef add-memberdc
+	:args (s/cat :mid :member/_id :dc :member/dc-entry))
 
 (defn delete-memberdc
 	[mid idx]
-	(let [dcs     (mc-find-map-by-id "delete-memberdc" members mid [dcs])
+	(let [dcs     (mc-find-map-by-id "delete-memberdc" members mid ["dcs"])
 		  new-dcs (utils/drop-nth idx dcs)]
 		(mc-update-by-id "delete-memberdc" members mid
 			{$set {:cs new-dcs}})))
+(s/fdef delete-memberdc
+	:args (s/cat :mid :member/_id :idx integer?))
 
 (defn update-member
 	[member]
@@ -239,7 +246,7 @@
 	[id]
 	(mc-find-one-as-map "get-member" members {:_id id}))
 (s/fdef get-member
-	:args :fiber/memberid
+	:args :member/_id
 	:ret  :fiber/member)
 
 (defn get-members

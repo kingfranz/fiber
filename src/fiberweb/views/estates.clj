@@ -1,6 +1,7 @@
 (ns fiberweb.views.estates
   	(:require 	(fiberweb 		[db         :as db]
-  								[utils      :as utils])
+  								[utils      :as utils]
+  								[config     :as config])
   				(fiberweb.views [layout     :as layout]
             					[common     :as common])
  	          	(garden 		[core       :as g]
@@ -88,7 +89,7 @@
 									 (filter #(< (:year %) (utils/current-year)))
 									 (sort-by :year)))
 							[:tr
-								[:td (hf/drop-down :biyear (range (utils/current-year) config/max-year) (utils/current-year))]
+								[:td (hf/drop-down :biyear (utils/curr-year-range) (utils/current-year))]
 								[:td (hf/label :xx " och framåt, Helår")]
 								[:td {:width 50} (hf/check-box {:class "cb"} :yearly (= current :yearly))]]])]]
 				[:tr [:td {:height 40}]]
@@ -128,8 +129,8 @@
 					[:tr
 						[:th {:colspan 2} (hf/label :xx "Medlemskapet började")]]
 					[:tr
-						[:td (hf/drop-down :fromyear (range (utils/current-year) config/max-year) (utils/current-year))]
-						[:td (hf/drop-down :frommonth (range 1 13) (utils/current-month))]]
+						[:td (hf/drop-down :fromyear (utils/curr-year-range) (utils/current-year))]
+						[:td (hf/drop-down :frommonth config/month-range (utils/current-month))]]
 					[:tr [:td {:height 40}]]]]]
 			[:tr [:td
 				[:table
@@ -149,7 +150,7 @@
 											   (utils/param->int params :frommonth))
 							:to nil}
 		:activities        nil
-		:billing-intervals (for [year (range (utils/current-year) (inc config/max-year))]
+		:billing-intervals (for [year (utils/curr-year-range)]
 								{:year year :interval (if (some? (:yearly params)) :yearly :quarterly)})
 		:dcs               []
 		:owners            []
@@ -187,7 +188,7 @@
 				[:tr [:td {:height 30}]]
 				[:tr
 					[:td (hf/label :xx "Aktiviteter för år")]
-					[:td (hf/drop-down :newyear (range config/min-year config/max-year) year)]]
+					[:td (hf/drop-down :newyear config/year-range year)]]
 				[:tr
 					[:td (hf/submit-button {:class "button1 button"} "Updatera Året")]]
 				[:tr [:td {:height 30}]]])
@@ -226,17 +227,16 @@
 (defn update-activities
 	[{params :params}]
 	(let [year (:year params)
-		  acts (db/get-acts year)
-		  f-acts (into {} (map (fn [e]
-		  	(clojure.lang.MapEntry. (:estateid e)
-		  	    (if (get params (utils/mk-tag (:estateid e) "A"))
-		  	    	4095
-		  	        (common/get-months (:estateid e) params))))
-		  		acts))
-		  new-acts* (remove (fn [a] (= (:actmonths a) (get f-acts (:estateid a)))) acts)
-		  new-acts (map (fn [a] (assoc a :actmonths (get f-acts (:estateid a)))) new-acts*)]
-		(doseq [a new-acts]
-			(db/update-activity (:estateid a) year (:actmonths a)))
+		  estates (db/get-estates-at year)
+		  amonths (fn [id] (if (some? (get params (utils/mk-tag id "A")))
+		  					   #{1 2 3 4 5 6 7 8 9 10 11 12}
+		  					   (common/get-months id params)))
+		  merge-acts (fn [months activities] map #(if (= (:year %) year) {:year year :months months} %) activities)
+		  acts (map (fn [{id :_id activities :activities}]
+		  			{:_id id :activities (merge-acts (amonths id) activities)})
+		  		estates)]
+		(doseq [a acts]
+			(db/update-activity (:_id a) (:activities a)))
 		))
 
 ;;-----------------------------------------------------------------------------
