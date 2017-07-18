@@ -92,22 +92,6 @@
 	(do-mc mc/remove-by-id func tbl args))
 
 ;;-----------------------------------------------------------------------------
-
-(s/fdef mk-enlc :args :fiber/string :ret :fiber/string)
-
-(defn mk-enlc
-	[en]
-	(-> en str/trim str/lower-case (str/replace #"[ \t-]+" " ")))
-
-(s/fdef get-by-enlc
-	:args (s/cat :tbl :fiber/string :en :fiber/string)
-	:ret (s/nilable map?))
-
-(defn get-by-enlc
-	[tbl en]
-	(mc-find-one-as-map "get-by-enlc" tbl {:entrynamelc en}))
-
-;;-----------------------------------------------------------------------------
 ;; estate
 
 (defn estateid-exists?
@@ -154,32 +138,56 @@
 (s/fdef delete-estatedc
 	:args (s/cat :eid :estate/_id :idx integer?))
 
+(defn- upd-estate
+	[e]
+	(-> e
+		(update :activities #(mapv (fn [a]
+			{:year   (:year a)
+			 :months (set (:months a))}) %))
+		(update :dcs #(mapv (fn [dc] 
+			{:date    (:date dc)
+			 :amount  (bigdec (:amount dc))
+			 :tax     (bigdec (:tax dc))
+			 :dc-type (keyword (:dc-type dc))
+			 :year    (:year dc)
+			 :months  (set (:months dc))}) %))
+		(update :billing-intervals #(mapv (fn [bi]
+			{:year      (:year bi)
+			 :bi-months (keyword (:bi-months bi))}) %))
+		))
+
+(defn- upd-estates
+	[ms]
+	(map upd-estate ms))
+
 (defn get-estate
 	[id]
-	(mc-find-map-by-id "get-estate" estates id))
+	(upd-estate (mc-find-map-by-id "get-estate" estates id)))
 (s/fdef get-estate
 	:args :estate/_id
 	:ret  :fiber/estate)
 
 (defn get-estates
 	([]
-	(mc-find-maps "get-estates" estates {}))
+	(upd-estates (mc-find-maps "get-estates" estates {})))
 	([memberid]
-	(mc-find-maps "get-estates" estates {:owners._id memberid}))
+	(upd-estates (mc-find-maps "get-estates" estates {:owners._id memberid})))
 	([memberid year]
-	(mc-find-maps "get-estates" estates {$and [{:owners._id memberid}
-											   {:owners.from-to.from {$lte (t/date-time year 12 31)}}
-											   {$or [{:owners.from-to.to nil}
-											   		 {:owners.from-to.to {$gte (t/date-time year 1 1)}}]}]})))
+	(upd-estates (mc-find-maps "get-estates" estates
+		{$and [{:owners._id memberid}
+			   {:owners.from-to.from {$lte (t/date-time year 12 31)}}
+			   {$or [{:owners.from-to.to nil}
+			   		 {:owners.from-to.to {$gte (t/date-time year 1 1)}}]}]}))))
 (s/fdef get-estates
 	:args (s/alt :none empty? :mid :estate/_id :mid-year (s/cat :mid :member/_id :year :fiber/year))
 	:ret  (s/* :fiber/estate))
 
 (defn get-estates-at
 	[year]
-	(mc-find-maps "get-estates-at" estates {$and [{:owners.from-to.from {$lte (t/date-time year 12 31)}}
-											      {$or [{:owners.from-to.to nil}
-											   		    {:owners.from-to.to {$gte (t/date-time year 1 1)}}]}]}))
+	(upd-estates (mc-find-maps "get-estates-at" estates
+		{$and [{:owners.from-to.from {$lte (t/date-time year 12 31)}}
+		       {$or [{:owners.from-to.to nil}
+				     {:owners.from-to.to {$gte (t/date-time year 1 1)}}]}]})))
 (s/fdef get-estates-at
 	:args :fiber/year
 	:ret  (s/* :fiber/estate))
@@ -242,30 +250,45 @@
 (s/fdef update-member
 	:args :fiber/member)
 
+(defn- upd-member
+	[m]
+	(-> m
+		(update-in [:contacts :preferred :type] keyword)
+		(update-in [:contacts :other] #(mapv (fn [c] (update c :type keyword)) %))
+		(update :dcs #(mapv (fn [dc] {:date    (:date dc)
+									  :amount  (bigdec (:amount dc))
+									  :tax     (bigdec (:tax dc))
+									  :dc-type (keyword (:dc-type dc))
+									  :year    (:year dc)}) %))))
+
+(defn- upd-members
+	[ms]
+	(map upd-member ms))
+
 (defn get-member
 	[id]
-	(mc-find-one-as-map "get-member" members {:_id id}))
+	(upd-member (mc-find-one-as-map "get-member" members {:_id id})))
 (s/fdef get-member
 	:args :member/_id
 	:ret  :fiber/member)
 
 (defn get-members
 	([]
-	(mc-find-maps "get-members" members {}))
+	(upd-members (mc-find-maps "get-members" members {})))
 	([year]
-	(mc-find-maps "get-members" members
+	(upd-members (mc-find-maps "get-members" members
 		{$and [{:from-to.from {$lte (t/date-time year 12 31)}}
 		       {$or [{:from-to.to nil}
-		             {:from-to.to {$gte (t/date-time year 1 1)}}]}]})))
+		             {:from-to.to {$gte (t/date-time year 1 1)}}]}]}))))
 (s/fdef get-members
 	:args (s/? :fiber/year)
 	:ret  (s/* :fiber/member))
 
 (defn get-current-members
 	[]
-	(mc-find-maps "get-members" members
+	(upd-members (mc-find-maps "get-members" members
 		{$and [{:from-to.from {$lte (l/local-now)}}
-			   {:from-to.to nil}]}))
+			   {:from-to.to nil}]})))
 
 (defn add-member
 	[member]

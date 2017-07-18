@@ -96,8 +96,10 @@
 	(cc/GET "/add-estate/:mid" [mid]
 	    (members/choose-estate mid))
 
-	(cc/GET "/edit-member/:id" [id]
-	    (members/edit-member id))
+	(cc/GET "/edit/:id" [id]
+	    (if (common/member? id)
+	    	(members/edit-member id)
+	    	(estates/edit-estate id)))
 	(cc/POST "/update-member" request
 		(members/update-member request)
 		(ring/redirect "/"))
@@ -110,9 +112,6 @@
 
 	(cc/GET "/choose-estate" []
 	    (estates/choose-estate))
-
-	(cc/GET "/edit-estate/:id" [id]
-	    (estates/edit-estate id))
 
 	(cc/POST "/update-estate" request
 		(estates/update-estate request)

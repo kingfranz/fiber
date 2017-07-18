@@ -43,6 +43,7 @@
 (defn edit-estate
 	[estateid]
 	(let [estate (db/get-estate estateid)]
+		(prn "estate:" estate)
 		(layout/common "Ändra en Fastighet" []
 		(hf/form-to
 			[:post "/update-estate"]

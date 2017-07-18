@@ -34,14 +34,19 @@
 
 (defn contact-row
 	[idx contacts]
-	(let [c (if (< idx (count contacts))
-				(nth contacts idx)
+	(let [cn (+ (count (:other contacts)) 1)
+		  c (if (< idx cn)
+				(if (zero? idx)
+					(:preferred contacts)
+					(nth (:other contacts) (dec idx)))
 				{})]
 		[:tr
 			[:td (hf/drop-down (utils/mk-tag "ctype" idx)
 				               (vals common/contact-map)
 				               (get common/contact-map (:type c)))]
 			[:td.txtcol (hf/text-field (utils/mk-tag "cvalue" idx) (:value c))]]))
+(s/fdef contact-row
+	:args (s/cat :idx (s/int-in 0 6) :contacts :member/contacts))
 
 (defn edit-member
 	[memberid]
@@ -74,7 +79,8 @@
 			[:tr [:td {:height 40}]]
 			[:tr [:td
 				(map-indexed (fn [i x]
-					(common/mk-ft "Fastigheter" (:_id x) (:from-to x) (zero? i))) (:estates member))]]
+					(common/mk-ft "Fastigheter" (:_id x) x (zero? i)))
+					(:estates member))]]
 			[:tr [:td {:colspan 4}
 				[:a.link-head {:href (str "/add-estate/" memberid)} "Lägg till"]]]
 			[:tr [:td {:height 40}]]
@@ -88,7 +94,7 @@
 					(for [i (range 6)] (contact-row i (:contacts member)))]]]
 			[:tr [:td {:height 40}]]
 			[:tr [:td
-				(common/mk-dc-section memberid (:dcs member) true)]]]))))
+				(common/mk-dc-section member)]]]))))
 
 (defn new-member
 	[eid]
@@ -129,7 +135,7 @@
 					[:tr
 						(if (some? eid)
 							(list
-								(common/mk-ft "" eid {:from (l/local-now) :to nil} false)
+								(common/mk-ft "" eid {:from-to {:from (l/local-now) :to nil}} false)
 								[:td [:a.link-thin {:href "/new-member"} "X"]])
 							[:td [:a.link-head {:href "/add-estate/new/"} "Lägg till"]])
 						]]]]
@@ -215,7 +221,7 @@
 				[:th (hf/label :xx "Namn")]]
 			(map (fn [x]
 				[:tr
-					[:td.rafield.rpad (hf/label :xx (:id x))]
+					[:td.rafield.rpad (hf/label :xx (:_id x))]
 					[:td [:a.link-thin {:href (str "/edit/" (:_id x))} (hf/label :xx (str (:name x)))]]])
 				(db/get-members))]))
 

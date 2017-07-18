@@ -50,10 +50,17 @@
 
 (defn member?
 	[m-or-e]
-	(some? (re-matches spec/memberid-regex (:_id m-or-e))))
+	(some? (re-matches spec/memberid-regex (if (string? m-or-e) m-or-e (:_id m-or-e)))))
+(s/fdef member?
+	:args (s/alt :mid :member/_id
+				 :eid :estate/_id
+				 :estate :fiber/estate
+				 :member :fiber/member)
+	:ret  boolean?)
 
 (defn mk-ft
 	[title id m header?]
+	(prn "mk-ft:" m)
 	[:table
 		(when header?
 			(list
@@ -78,7 +85,7 @@
 															 (utils/mk-tag "toyear" id) "','"
 															 (utils/mk-tag "tomonth" id) "')")}
 							   (utils/mk-tag "endtag" id) 
-							   (some? (:toyear m)))]
+							   (some? (some-> m :from-to :to t/year)))]
 			
 			[:td (hf/drop-down {:disabled (when (-> m :from-to :to nil?) "disabled")}
 							   (utils/mk-tag "toyear" id) 
@@ -88,6 +95,11 @@
 							   (utils/mk-tag "tomonth" id) 
 							   config/month-range
 							   (some-> m :from-to :to t/month))]]])
+(s/fdef mk-ft
+	:args (s/cat :title string?
+				 :id (s/alt :eid :estate/_id :mid :member/_id)
+				 :m (s/alt :estate :fiber/estate :member :fiber/member)
+				 :header? boolean?))
 
 (defn extract-ft
 	[params id]
