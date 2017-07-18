@@ -29,6 +29,8 @@
 
 ;;-----------------------------------------------------------------------------
 
+; mongoimport -u fiberuser -p "kAllE.kUlA399" --authenticationDatabase fiberdb --db fiberdb --file estates.json --drop --jsonArray
+
 (def css-lists
 	(g/css
 		[:.tbl-brdr {:border-left [[(u/px 1) :grey :solid]]
