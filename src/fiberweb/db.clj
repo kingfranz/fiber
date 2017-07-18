@@ -372,8 +372,8 @@
 (defn get-activities-all
 	[]
 	(j/query fiberdb
-		["select distinct memberid, name, estateid, address, bimonths, actmonths
-		  from fiberdb.estate_usage"]))
+		["select *
+		  from fiberdb.estateact"]))
 
 (defn get-activities-for
 	[year eid]
