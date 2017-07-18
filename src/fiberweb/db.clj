@@ -141,6 +141,7 @@
 (defn- upd-estate
 	[e]
 	(-> e
+		utils/spy
 		(update :activities #(mapv (fn [a]
 			{:year   (:year a)
 			 :months (set (:months a))}) %))
@@ -152,8 +153,8 @@
 			 :year    (:year dc)
 			 :months  (set (:months dc))}) %))
 		(update :billing-intervals #(mapv (fn [bi]
-			{:year      (:year bi)
-			 :bi-months (keyword (:bi-months bi))}) %))
+			{:year     (:year bi)
+			 :interval (keyword (:interval bi))}) %))
 		))
 
 (defn- upd-estates

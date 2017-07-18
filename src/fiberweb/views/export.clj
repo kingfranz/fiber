@@ -80,7 +80,7 @@
 		(for [m-estate (:estates member)
 			:let [estate (db/get-estate (:_id m-estate))
 				  ee (assoc (select-keys estate [:_id :location :address :from-to])
-				  			:bi-months (:bi-months (utils/get-year (utils/current-year) (:billing-intervals estate))))]
+				  			:interval (:interval (utils/get-year (utils/current-year) (:billing-intervals estate))))]
 			:when (-> m-estate :from-to :to nil?)]
 			(assoc (dissoc member :estates) :estate ee))))
 
@@ -94,7 +94,7 @@
 		 (-> m :estate :_id)
 		 (-> m :estate :location)
 		 (-> m :estate :address)
-		 (-> m :estate :bi-months name)
+		 (-> m :estate :interval name)
 		 (-> m :estate :from-to :from utils/year-month)
 		 ]) (get-all))))
 
@@ -128,7 +128,7 @@
 					[:td.rafield.rpad.brdr (hf/label :xx (-> m :estate :_id))]
 					[:td.txtcol.brdr       (hf/label :xx (-> m :estate :location))]
 					[:td.txtcol.brdr       (hf/label :xx (-> m :estate :address))]
-					[:td.rafield.rpad.brdr (hf/label :xx (-> m :estate :bi-months name))]
+					[:td.rafield.rpad.brdr (hf/label :xx (-> m :estate :interval name))]
 					[:td.dcol.brdr         (hf/label :xx (-> m :estate :from-to :from utils/year-month))]
 				]) (get-all))
 				]))
