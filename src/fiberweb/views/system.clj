@@ -646,14 +646,17 @@
 (defn trans-dc
 	[dc]
 	(let [dc* {
-		 :date    (c/from-sql-time (:date dc))
-		 :amount  (bigdec (:amount dc))
-		 :tax     (bigdec (:tax dc))
-		 :dc-type (keyword (str/replace (:type dc) "-" ""))
-		 :year    (:year dc)}]
-		(if (some? (:months dc))
-			(assoc dc* :months (months->arr (:months dc)))
-			dc*)))
+		  :date    (c/from-sql-time (:date dc))
+		  :amount  (bigdec (:amount dc))
+		  :tax     (bigdec (:tax dc))
+		  :dc-type (keyword (str/replace (:type dc) "-" ""))
+		  :year    (:year dc)}
+		  dc+ (if (some? (:months dc))
+				(assoc dc* :months (months->arr (:months dc)))
+				dc*)]
+		(if (some nil? (vals dc+))
+			(throw (ex-info (str "trans-dc:" dc "\n\n" dc+) {:cause :wrong}))
+			dc+)))
 
 (defn trans-ft
 	[f t]
@@ -684,7 +687,7 @@
 						 :billing-intervals (->> estatebis
 						 						 (filter #(= (:estateid %) (:estateid estate)))
 						 						 (mapv (fn [bi] {:year (:year bi)
-						 						 				 :bi-months (if (= (:bimonths bi) 12) :yearly :quarterly)})))
+						 						 				 :interval (if (= (:bimonths bi) 12) :yearly :quarterly)})))
 						 :dcs               (->> estatedcs
 						 						 (filter #(= (:estateid %) (:estateid estate)))
 						 						 (mapv trans-dc))
