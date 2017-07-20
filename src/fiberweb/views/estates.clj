@@ -22,7 +22,8 @@
             	(clojure 		[string     :as str]
             					[set        :as set]
             					[pprint     :as pp])
-            	[clojure.tools.reader.edn :as edn]))
+            	[clojure.tools.reader.edn :as edn]
+            	[clojure.spec.alpha :as s]))
 
 ;;-----------------------------------------------------------------------------
 

@@ -22,88 +22,104 @@
             					[form       :as hf]
             					[page       :as hp]
             					[util       :as hu])
-            	(taoensso 		[timbre     :as timbre])
+            	(taoensso 		[timbre     :as log])
             	(clojure.java 	[io         :as io])
             	(clojure 		[string     :as str]
-            					[spec       :as s]
-            					[set        :as set])))
+            					[set        :as set])
+            	[clojure.spec.alpha :as s]))
 
 ;;-----------------------------------------------------------------------------
 
+(s/def :sys/name string?)
+(s/def :sys/contact string?)
+
+(defn current-owner
+	[estate]
+	{:pre [(utils/q-valid? :fiber/estate estate)]
+	 :post [(utils/q-valid? (s/nilable :member/_id) %)]}
+	(some->> estate :owners (utils/find-first #(-> % :from-to :to nil?)) :_id))
+
+(defn current-owner-info
+	[estate]
+	{:pre [(utils/q-valid? :fiber/estate estate)]
+	 :post [(utils/q-valid? (s/keys :req-un [:sys/name :sys/contact]) %)]}
+	(if-let [mid (current-owner estate)]
+		(if-let [owner (db/get-member mid)]
+			{:name (:name owner) :contact (-> owner :contacts :preferred :value)}
+			{:name "" :contact ""})
+		{:name "" :contact ""}))
+
 (defn calc-member-sum
 	[m year]
+	{:pre [(utils/q-valid? :fiber/member m) (utils/q-valid? :fiber/year year)]
+	 :post [(utils/q-valid? :fiber/member-sum %)]}
 	(let [dcs (filter #(= (:year %) year) (:dcs m))
 		  fee (reduce (fn [f1 f2] {:amount (+ (:amount f1) (:amount f2))
-		  						   :tax (+ (:tax f1) (:tax f2))}) {:amount 0M :tax 0M}
+		  						   :tax (+ (:tax f1) (:tax f2))}) {:amount 0 :tax 0}
 		  		(filter #(= (:dc-type %) :membership-fee) dcs))
-		  pay (reduce + 0M (map :amount (filter #(= (:dc-type %) :payment) dcs)))]
-		{:feeamount (:amount fee)
-		 :feetax    (:tax fee)
-		 :payamount pay
-		 :total     (+ (:amount fee) (:tax fee) pay)}))
-(s/fdef calc-member-sum
-	:args (s/cat :m :fiber/member :year :fiber/year)
-	:ret  :fiber/member-sum)
+		  pay (reduce + 0.0 (map :amount (filter #(= (:dc-type %) :payment) dcs)))]
+		{:fee-amount (:amount fee)
+		 :fee-tax    (:tax fee)
+		 :pay-amount (double pay)
+		 :total      (+ (:amount fee) (:tax fee) pay)}))
 
 (defn get-membership-data
 	[year]
+	{:pre [(utils/q-valid? :fiber/year year)]
+	 :post [(utils/q-valid? (s/* (s/merge :fiber/member :fiber/member-sum)) %)]}
 	(->> (db/get-members)
 		 (filter #(utils/within (:from-to %) year 1 1))
 		 (map #(merge % (calc-member-sum % year)))
-		 (remove #(= (:total %) 0M))))
-(s/fdef get-membership-data
-	:args :fiber/year
-	:ret  (s/* (s/merge :fiber/member :fiber/member-sum)))
+		 (remove #(= (:total %) 0.0))))
 
 ;;-----------------------------------------------------------------------------
 
 (defn estate-debt
 	[estate year months]
+	{:pre [(utils/q-valid? :fiber/estate estate) (utils/q-valid? :fiber/year year) (utils/q-valid? :estate/months months)]
+	 :post [(utils/q-valid? :fiber/estate-sum %)]}
 	(let [dcs (filter #(and (= (:year %) year)
 							(not-empty (set/intersection months (:months %))))
 				(:dcs estate))
-		  conamount (->> dcs
+		  con-amount (->> dcs
 		  				 (filter #(= (:dc-type %) :connection-fee))
 		  				 (map :amount)
 		  				 (reduce +))
-		  contax    (->> dcs
+		  con-tax    (->> dcs
 		  				 (filter #(= (:dc-type %) :connection-fee))
 		  				 (map :tax)
 		  				 (reduce +))
-		  opamount  (->> dcs
+		  op-amount  (->> dcs
 		  				 (filter #(= (:dc-type %) :operator-fee))
 		  				 (map :amount)
 		  				 (reduce +))
-		  optax     (->> dcs
+		  op-tax     (->> dcs
 		  				 (filter #(= (:dc-type %) :operator-fee))
 		  				 (map :tax)
 		  				 (reduce +))
-		  payamount (->> dcs
+		  pay-amount (->> dcs
 		  				 (filter #(= (:dc-type %) :payment))
 		  				 (map :amount)
 		  				 (reduce +))]
-		{:conamount conamount
-		 :contax    contax
-		 :opamount  opamount
-		 :optax     optax
-		 :payamount payamount
-		 :total     (+ conamount contax opamount optax payamount)}))
-(s/fdef estate-debt
-	:args (s/cat :estate :fiber/estate :year :fiber/year :months :fiber/months)
-	:ret  :fiber/estate-sum)
+		{:con-amount (double con-amount)
+		 :con-tax    (double con-tax)
+		 :op-amount  (double op-amount)
+		 :op-tax     (double op-tax)
+		 :pay-amount (double pay-amount)
+		 :total      (+ con-amount con-tax op-amount op-tax pay-amount)}))
 
 (defn get-usage-data
 	[year quarter y-or-q]
+	{:pre [(utils/q-valid? :fiber/year year) (utils/q-valid? (s/int-in 1 5) quarter) (utils/q-valid? :estate/interval y-or-q)]
+	 :post [(utils/q-valid? (s/* (s/merge :fiber/estate :fiber/estate-sum)) %)]}
 	(let [months (set (range 1 (inc (* quarter 3))))]
 		(->> (db/get-estates)
 			 (filter #(utils/within (:from-to %) year))
 			 (filter (fn [e] (= (get (utils/get-year year (:billing-intervals e)) :interval) y-or-q)))
 			 (filter (fn [e] (not-empty (set/intersection months (get (utils/get-year year (:activities e)) :months)))))
+			 (map #(assoc % :owner (current-owner-info %)))
 			 (map #(merge % (estate-debt % year months)))
-			 (remove #(= (:total %) 0M)))))
-(s/fdef get-usage-data
-	:args (s/cat :year :fiber/year :quarter (s/int-in 1 5) :y-or-q :estate/interval)
-	:ret  (s/* (s/merge :fiber/estate :fiber/estate-sum)))
+			 (remove #(= (:total %) 0)))))
 
 ;;-----------------------------------------------------------------------------
 
@@ -118,11 +134,11 @@
 		  config      (db/get-config-at year)]
 		(doseq [member members-owe]
 			(db/add-memberdc (:_id member)
-				{:date   (l/local-now)
-				 :amount (:membershipfee config)
-				 :tax    (:membershiptax config)
-				 :type   :membership-fee
-				 :year   year}))))
+				{:date    (l/local-now)
+				 :amount  (:membership-fee config)
+				 :tax     (:membership-tax config)
+				 :dc-type :membership-fee
+				 :year    year}))))
 
 (defn invoice-membership
 	[year]
@@ -148,33 +164,37 @@
 			]
 			(map (fn [x]
 				[:tr
-				[:td.rpad.rafield.tafield (hf/label :xx (:_id x))]
-				[:td.udpad.tafield {:width 400} (hf/label :xx (:name x))]
-				[:td.udpad.tafield {:width 400} (hf/label :xx (:contact x))]
-				[:td.rafield.tafield {:width 100} (hf/label :xx (:amount x))]
-				[:td.rafield.tafield {:width 100} (hf/label :xx (:tax x))]
-				[:td.rafield.tafield {:width 100} (hf/label :xx (:total x))]
-				]) (get-membership-data year))]))
+					[:td.rpad.rafield.tafield (hf/label :xx (:_id x))]
+					[:td.udpad.tafield {:width 400} (hf/label :xx (:name x))]
+					[:td.udpad.tafield {:width 400} (hf/label :xx (:contact x))]
+					[:td.rafield.tafield {:width 100} (hf/label :xx (:fee-amount x))]
+					[:td.rafield.tafield {:width 100} (hf/label :xx (:fee-tax x))]
+					[:td.rafield.tafield {:width 100} (hf/label :xx (:total x))]
+				])
+			(get-membership-data year))]))
 
 (defn months-upto
 	[quarter]
+	{:pre [(utils/q-valid? (s/int-in 1 5) quarter)]
+	 :post [(utils/q-valid? :estate/months %)]}
 	(set (range 1 (inc (* quarter 3)))))
-(s/fdef months-upto
-	:args (s/int-in 1 5)
-	:ret  :estate/months)
 
 (defn get-interval
 	[estate year]
+	{:pre [(utils/q-valid? :fiber/estate estate) (utils/q-valid? :fiber/year year)]
+	 :post [(utils/q-valid? :estate/interval %)]}
 	(->> estate
 		 :billing-intervals
 		 (utils/get-year year)
 		 :interval))
-(s/fdef get-interval
-	:args (s/cat :estate :fiber/estate :year :fiber/year)
-	:ret   :estate/interval)
 
 (defn get-edcs
 	[estate year qmonths dc-type]
+	{:pre [(utils/q-valid? :fiber/estate estate)
+		   (utils/q-valid? :fiber/year year)
+		   (utils/q-valid? :estate/months qmonths)
+		   (utils/q-valid? :estate/dc-type dc-type)]
+	 :post [(utils/q-valid? :estate/months %)]}
 	(->> estate
 		 :dcs
 		 (filter #(and (= (:year %) year)
@@ -182,12 +202,10 @@
 				       (seq (set/intersection (:months %) qmonths))))
 		 (map #(set/intersection (:months %) qmonths))
 		 (reduce set/union #{})))
-(s/fdef get-edcs
-	:args (s/cat :estate :fiber/estate :year :fiber/year :qmonths :estate/months :dc-type :estate/dc-type)
-	:ret  :estate/months)
 
 (defn update-estate-q-fixed
 	[year quarter y-or-q]
+	{:pre [(utils/q-valid? :fiber/year year) (utils/q-valid? (s/int-in 1 5) quarter) (utils/q-valid? :estate/interval y-or-q)]}
 	(let [qmonths (months-upto quarter)
 	      eowe    (->> (db/get-estates-at year)
 					   (filter #(= (get-interval % year) y-or-q))
@@ -196,30 +214,30 @@
 	      config (db/get-config-at year)]
         (doseq [e eowe]
         	(doseq [m qmonths
-        		:when (not (some #{m} (:dcs e)))]
-        		(db/add-estatedc (:_id e)
-        			{:date     (l/local-now)
-        			 :amount   (:connectionfee config)
-        			 :tax      (:connectionfee config)
-        			 :type     :connection-fee
+        		:when (not (some #{m} (:dcs e)))
+        		:let [new-dc {:date     (l/local-now)
+        			 :amount   (:connection-fee config)
+        			 :tax      (:connection-fee config)
+        			 :dc-type  :connection-fee
         			 :year     year
-        			 :months   #{m}})))))
-(s/fdef update-estate-q-fixed
-	:args (s/cat :year :fiber/year :quarter (s/int-in 1 5) :y-or-q :estate/interval))
+        			 :months   #{m}}]]
+        		(s/assert :estate/dc-entry new-dc)
+        		(db/add-estatedc (:_id e)
+        			new-dc)))))
 
 (defn get-activities-for
 	[estate year qmonths]
-	(->> estate
+	{:pre [(utils/q-valid? :fiber/estate estate) (utils/q-valid? :fiber/year year) (utils/q-valid? :estate/months qmonths)]
+	 :post [(utils/q-valid? :estate/months %)]}
+	(->> (utils/spy "get-activities-for:" estate)
 		 :activities
 		 (utils/get-year year)
 		 :months
 		 (set/intersection qmonths)))
-(s/fdef get-activities-for
-	:args (s/cat :estate :fiber/estate :year :fiber/year :qmonths :estate/months)
-	:ret  :estate/months)
 
 (defn update-estate-q-activity
 	[year quarter y-or-q]
+	{:pre [(utils/q-valid? :fiber/year year) (utils/q-valid? (s/int-in 1 5) quarter) (utils/q-valid? :estate/interval y-or-q)]}
 	(let [qmonths (months-upto quarter)
 	      eowe    (->> (db/get-estates-at year)
 					   (filter #(= (get-interval % year) y-or-q))
@@ -231,21 +249,21 @@
         (doseq [e eowe]
         	(doseq [m qmonths
         		:when (and (not (some #{m} (set (:dcs e))))
-        				   (some #{m} (set (:acts e))))]
+        				   (some #{m} (set (:acts e))))
+        		:let [new-dc {:date     (l/local-now)
+        			 :amount  (:operatorfee config)
+        			 :tax     (:operatorfee config)
+        			 :dc-type :operator-fee
+        			 :year    year
+        			 :months  #{m}}]]
+        		(s/assert :estate/dc-entry new-dc)
         		(db/add-estatedc (:_id e)
-        			{:date     (l/local-now)
-        			 :amount   (:operatorfee config)
-        			 :tax      (:operatorfee config)
-        			 :type     :operator-fee
-        			 :year     year
-        			 :months   #{m}})))))
-(s/fdef update-estate-q-activity
-	:args (s/cat :year :fiber/year :quarter (s/int-in 1 5) :y-or-q :estate/interval))
+        			new-dc)))))
 
 (defn invoice-quarter
 	[year quarter]
-	(update-estate-q-fixed year quarter :quaterly)
-	(update-estate-q-activity year quarter :quaterly)
+	(update-estate-q-fixed year quarter :quarterly)
+	(update-estate-q-activity year quarter :quarterly)
 	(layout/common (str "Användningsavgifter " year " Q" quarter) []
 		(hf/form-to
 			[:post "/invoice/quarter"]
@@ -280,14 +298,14 @@
 			(map (fn [x]
 				[:tr
 					[:td.rafield.rpad.tafield         (hf/label :xx (:memberid x))]
-					[:td.udpad.tafield {:width 400}   (hf/label :xx (:name x))]
+					[:td.udpad.tafield {:width 400}   (hf/label :xx (-> x :owner :name))]
 					[:td.udpad.tafield {:width 300}   (hf/label :xx (:address x))]
-					[:td.udpad.tafield {:width 250}   (hf/label :xx (:contact x))]
-					[:td.rafield.tafield {:width 120} (hf/label :xx (:conamount x))]
-					[:td.rafield.tafield {:width 120} (hf/label :xx (str "(" (:contax x) ")"))]
-					[:td.rafield.tafield {:width 120} (hf/label :xx (:opamount x))]
-					[:td.rafield.tafield {:width 120} (hf/label :xx (str "(" (:optax x) ")"))]
-					[:td.rafield.tafield {:width 100} (hf/label :xx (:payamount x))]
+					[:td.udpad.tafield {:width 250}   (hf/label :xx (-> x :owner :contact))]
+					[:td.rafield.tafield {:width 120} (hf/label :xx (:con-amount x))]
+					[:td.rafield.tafield {:width 120} (hf/label :xx (str "(" (:con-tax x) ")"))]
+					[:td.rafield.tafield {:width 120} (hf/label :xx (:op-amount x))]
+					[:td.rafield.tafield {:width 120} (hf/label :xx (str "(" (:op-tax x) ")"))]
+					[:td.rafield.tafield {:width 100} (hf/label :xx (:pay-amount x))]
 					[:td.rafield.tafield {:width 100} (hf/label :xx (:total x))]
 				])
 				(get-usage-data year quarter :quarterly))]))
@@ -325,14 +343,14 @@
 			(map (fn [x]
 				[:tr
 					[:td.rafield.rpad.tafield         (hf/label :xx (:_id x))]
-					[:td.udpad.tafield {:width 400}   (hf/label :xx (:name x))]
+					[:td.udpad.tafield {:width 400}   (hf/label :xx (-> x :owner :name))]
 					[:td.udpad.tafield {:width 300}   (hf/label :xx (:address x))]
-					[:td.udpad.tafield {:width 250}   (hf/label :xx (:contact x))]
-					[:td.rafield.tafield {:width 120} (hf/label :xx (:conamount x))]
-					[:td.rafield.tafield {:width 120} (hf/label :xx (str "(" (:contax x) ")"))]
-					[:td.rafield.tafield {:width 120} (hf/label :xx (:opamount x))]
-					[:td.rafield.tafield {:width 120} (hf/label :xx (str "(" (:optax x) ")"))]
-					[:td.rafield.tafield {:width 100} (hf/label :xx (:payamount x))]
+					[:td.udpad.tafield {:width 250}   (hf/label :xx (-> x :owner :contact))]
+					[:td.rafield.tafield {:width 120} (hf/label :xx (:con-amount x))]
+					[:td.rafield.tafield {:width 120} (hf/label :xx (str "(" (:con-tax x) ")"))]
+					[:td.rafield.tafield {:width 120} (hf/label :xx (:op-amount x))]
+					[:td.rafield.tafield {:width 120} (hf/label :xx (str "(" (:op-tax x) ")"))]
+					[:td.rafield.tafield {:width 100} (hf/label :xx (:pay-amount x))]
 					[:td.rafield.tafield {:width 100} (hf/label :xx (:total x))]
 				])
 				(get-usage-data year 4 :yearly))]))
@@ -343,7 +361,7 @@
 	[m-estates estates]
 	(->> m-estates
 		 (map (fn [e] (utils/find-first #(= (:_id %) (:_id e)) estates)))
-		 (remove (fn [e] (or (nil? e) (= (:total e) 0M))))))
+		 (remove (fn [e] (or (nil? e) (= (:total e) 0))))))
 
 (defn mk-rows
 	[year]
@@ -351,8 +369,8 @@
 		  				  (get-usage-data year 4 :quarterly))
 		  m-and-e  (->> (get-membership-data year)
 		  				(map (fn [m] (update m :estates (fn [est] (swap-estate est estates)))))
-		  			    (remove (fn [m] (and (= (:total m) 0M)
-		  									 (= (reduce + 0M (map :total (:estates m))) 0M)))))]
+		  			    (remove (fn [m] (and (= (:total m) 0)
+		  									 (= (reduce + 0 (map :total (:estates m))) 0)))))]
 		(flatten
 			(map (fn [m] [
 				{:_id     (:_id m)
@@ -447,7 +465,7 @@
 	[{params :params}]
 	(let [values (fn [id-rx] (->> params
 		              (filter #(re-matches id-rx (name (key %))))
-		              (map (fn [me] {:_id (key me) :amount (when (seq (val me)) (BigDecimal. (val me)))}))
+		              (map (fn [me] {:_id (key me) :amount (when (seq (val me)) (Double/valueOf (val me)))}))
 		              (remove #(nil? (:amount %)))))]
 		(doseq [m-entry (values spec/memberid-regex)]
 			(db/add-member-payment (:_id m-entry)
@@ -477,8 +495,8 @@
 				[:tr [:td {:height 40}]]
 				[:tr
 					[:td.txtcol (hf/label :xx "")]
-					[:td.valcol (hf/label :xx "Belopp")]
-					[:td.valcol (hf/label :xx "Moms%")]]
+					[:td.valcol (hf/label :xx "Belopp SEK")]
+					[:td.valcol (hf/label :xx "Moms SEK")]]
 				[:tr
 					[:td.txtcol (hf/label :xx "Medlemsavgift")]
 					[:td.valcol (hf/text-field :membership-fee "")]
@@ -491,6 +509,10 @@
 					[:td.txtcol (hf/label :xx "Operatörsavgift")]
 					[:td.valcol (hf/text-field :operator-fee "")]
 					[:td.valcol (hf/text-field :operator-tax "")]]
+				[:tr
+					[:td.txtcol (hf/label :xx "Insats")]
+					[:td.valcol (hf/text-field :entry-fee "")]
+					[:td.valcol (hf/text-field :entry-tax "")]]
 				[:tr [:td {:height 40}]]
 				[:tr
 					[:td.txtcol (hf/label :xx "Gäller från")]
@@ -502,13 +524,16 @@
 
 (defn add-config
 	[{params :params}]
-	(db/add-config {:membershipfee (BigDecimal.    (:membership-fee params))
-		  			:membershiptax (/ (BigDecimal. (:membership-tax params)) 100M)
-		  			:connectionfee (BigDecimal.    (:connection-fee params))
-		  			:connectiontax (/ (BigDecimal. (:connection-tax params)) 100M)
-		  			:operatorfee   (BigDecimal.    (:operator-fee params))
-		  			:operatortax   (/ (BigDecimal. (:operator-tax params)) 100M)
-		  			:fromyear      (t/date-time (:fromyear params) (:frommonth params) 1)}))
+	(db/add-config {:_id            (l/local-now)
+					:membership-fee (Double/valueOf (:membership-fee params))
+		  			:membership-tax (Double/valueOf (:membership-tax params))
+		  			:connection-fee (Double/valueOf (:connection-fee params))
+		  			:connection-tax (Double/valueOf (:connection-tax params))
+		  			:operator-fee   (Double/valueOf (:operator-fee params))
+		  			:operator-tax   (Double/valueOf (:operator-tax params))
+		  			:entry-fee      (Double/valueOf (:entry-fee params))
+		  			:entry-tax      (Double/valueOf (:entry-tax params))
+		  			:from           (t/date-time (:fromyear params) (:frommonth params) 1)}))
 
 ;;-----------------------------------------------------------------------------
 

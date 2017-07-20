@@ -25,8 +25,8 @@
             					[joda-time  	:as jt]
             					[operators 		:refer :all])
             	(clojure 		[string     	:as str]
-            					[set        	:as set]
-            					[spec       	:as s])))
+            					[set        	:as set])
+				[clojure.spec.alpha :as s]))
 
 ;;-----------------------------------------------------------------------------
 
@@ -44,9 +44,6 @@
 (defn fname
 	[s]
 	(second (re-matches #"^[^$]+\$(.+)@.+$" (str s))))
-(s/fdef fname
-	:args (s/cat :s :fiber/string)
-	:ret :fiber/string)
 
 (defn- do-mc
 	[mc-func caller tbl & args]
@@ -96,59 +93,53 @@
 
 (defn estateid-exists?
 	[eid]
+	{:pre [(utils/q-valid? :estate/_id eid)]
+	 :post [(utils/q-valid? boolean? %)]}
 	(some? (mc-find-one-as-map "estateid-exists?" fiberdb eid)))
-(s/fdef estateid-exists?
-	:args :estate/_id
-	:ret  boolean?)
 
 (defn estate-count
 	[]
+	{:post [(utils/q-valid? integer? %)]}
 	(mc/count fiberdb estates {}))
-(s/fdef estate-count
-	:ret integer?)
 
 (defn add-estate
 	[estate]
+	{:pre [(utils/q-valid? :fiber/estate estate)]}
 	(when (estateid-exists? (:_id estate))
 		(throw (Exception. "duplicate estate ID")))
 	(mc-insert "add-estate" estates estate))
-(s/fdef add-estate
-	:args :fiber/estate)
 
 (defn update-estate
 	[estate-part]
+	{:pre [(utils/q-valid? :fiber/estate-light estate-part)]}
 	(mc-update-by-id "update-estate" estates (:_id estate-part)
 		{$set (dissoc estate-part :_id)}))
-(s/fdef update-estate
-	:args :fiber/estate-light)
 
 (defn add-estatedc
 	[eid dc]
+	{:pre [(utils/q-valid? :estate/_id eid) (utils/q-valid? :estate/dc-entry dc)]}
 	(mc-update-by-id "add-estatedc" estates eid
 		{$push {:dcs dc}}))
-(s/fdef add-estatedc
-	:args (s/cat :eid :estate/_id :dc :estate/dc-entry))
 
 (defn delete-estatedc
 	[eid idx]
+	{:pre [(utils/q-valid? :estate/_id eid) (utils/q-valid? integer? idx)]}
 	(let [dcs     (mc-find-map-by-id "delete-estatedc" estates eid ["dcs"])
 		  new-dcs (utils/drop-nth idx dcs)]
 		(mc-update-by-id "delete-estatedc" estates eid
 			{$set {:cs new-dcs}})))
-(s/fdef delete-estatedc
-	:args (s/cat :eid :estate/_id :idx integer?))
 
 (defn- upd-estate
 	[e]
 	(-> e
-		utils/spy
+		;utils/spy
 		(update :activities #(mapv (fn [a]
 			{:year   (:year a)
 			 :months (set (:months a))}) %))
 		(update :dcs #(mapv (fn [dc] 
 			{:date    (:date dc)
-			 :amount  (bigdec (:amount dc))
-			 :tax     (bigdec (:tax dc))
+			 :amount  (:amount dc)
+			 :tax     (:tax dc)
 			 :dc-type (keyword (:dc-type dc))
 			 :year    (:year dc)
 			 :months  (set (:months dc))}) %))
@@ -163,104 +154,95 @@
 
 (defn get-estate
 	[id]
+	{:pre [(utils/q-valid? :estate/_id id)]
+	 :post [(utils/q-valid? :fiber/estate %)]}
 	(upd-estate (mc-find-map-by-id "get-estate" estates id)))
-(s/fdef get-estate
-	:args :estate/_id
-	:ret  :fiber/estate)
 
 (defn get-estates
 	([]
+	{:post [(utils/q-valid? (s/* :fiber/estate) %)]}
 	(upd-estates (mc-find-maps "get-estates" estates {})))
 	([memberid]
+	{:pre [(utils/q-valid? :member/_id memberid)]
+	 :post [(utils/q-valid? (s/* :fiber/estate) %)]}
 	(upd-estates (mc-find-maps "get-estates" estates {:owners._id memberid})))
 	([memberid year]
+	{:pre [(utils/q-valid? :member/_id memberid) (utils/q-valid? :fiber/year year)]
+	 :post [(utils/q-valid? (s/* :fiber/estate) %)]}
 	(upd-estates (mc-find-maps "get-estates" estates
 		{$and [{:owners._id memberid}
 			   {:owners.from-to.from {$lte (t/date-time year 12 31)}}
 			   {$or [{:owners.from-to.to nil}
 			   		 {:owners.from-to.to {$gte (t/date-time year 1 1)}}]}]}))))
-(s/fdef get-estates
-	:args (s/alt :none empty? :mid :estate/_id :mid-year (s/cat :mid :member/_id :year :fiber/year))
-	:ret  (s/* :fiber/estate))
 
 (defn get-estates-at
 	[year]
+	{:pre [(utils/q-valid? :fiber/year year)]
+	 :post [(utils/q-valid? (s/* :fiber/estate) %)]}
 	(upd-estates (mc-find-maps "get-estates-at" estates
 		{$and [{:owners.from-to.from {$lte (t/date-time year 12 31)}}
 		       {$or [{:owners.from-to.to nil}
 				     {:owners.from-to.to {$gte (t/date-time year 1 1)}}]}]})))
-(s/fdef get-estates-at
-	:args :fiber/year
-	:ret  (s/* :fiber/estate))
 
 (defn update-activity
 	[eid acts]
+	{:pre [(utils/q-valid? :estate/_id eid) (utils/q-valid? :estate/activities acts)]}
 	(mc-update-by-id "update-activity" estates eid
 		{$set {:activities acts}}))
-(s/fdef update-activity
-	:args (s/cat :eid :estate/_id :acts :estate/activities))
 
 (defn add-estate-payment
 	[eid amount year]
-	(mc-update-by-id "add-estate-payment" estates eid
-		{$set {:date   (l/local-now)
-			   :amount amount
-		 	   :tax    0M
-			   :type   :payment
-			   :year   year
-			   :months (set config/month-range)}}))
-(s/fdef add-estate-payment
-	:args (s/cat :eid :estate/_id :amount :fiber/amount :year :fiber/year))
+	{:pre [(utils/q-valid? :estate/_id eid) (utils/q-valid? :fiber/amount amount) (utils/q-valid? :fiber/year year)]}
+	(let [dc {:date    (l/local-now)
+			  :amount  amount
+		 	  :tax     0.0
+			  :dc-type :payment
+			  :year    year
+			  :months  (set config/month-range)}]
+		(s/assert :estate/dc-entry dc)
+		(mc-update-by-id "add-estate-payment" estates eid
+			{$push {:dcs dc}})))
 
 ;;-----------------------------------------------------------------------------
 ;; member
 
 (defn memberid-exists?
 	[mid]
+	{:pre [(utils/q-valid? :member/_id mid)]
+	 :post [(utils/q-valid? boolean? %)]}
 	(some? (mc-find-one-as-map "memberid-exists?" fiberdb mid)))
-(s/fdef memberid-exists?
-	:args :member/_id
-	:ret  boolean?)
 
 (defn member-count
 	[]
+	{:post [(utils/q-valid? integer? %)]}
 	(mc/count fiberdb members {}))
-(s/fdef member-count
-	:ret integer?)
 
 (defn add-memberdc
 	[mid dc]
+	{:pre [(utils/q-valid? :member/_id mid) (utils/q-valid? :member/dc-entry dc)]}
 	(mc-update-by-id "add-memberdc" members mid
 		{$push {:dcs dc}}))
-(s/fdef add-memberdc
-	:args (s/cat :mid :member/_id :dc :member/dc-entry))
 
 (defn delete-memberdc
 	[mid idx]
+	{:pre [(utils/q-valid? :member/_id mid) (utils/q-valid? integer? idx)]}
 	(let [dcs     (mc-find-map-by-id "delete-memberdc" members mid ["dcs"])
 		  new-dcs (utils/drop-nth idx dcs)]
 		(mc-update-by-id "delete-memberdc" members mid
-			{$set {:cs new-dcs}})))
-(s/fdef delete-memberdc
-	:args (s/cat :mid :member/_id :idx integer?))
+			{$set {:dcs new-dcs}})))
 
 (defn update-member
 	[member]
+	{:pre [(utils/q-valid? :fiber/member member)]}
 	(mc-update-by-id members (:_id member)
 		{$set member}))
-(s/fdef update-member
-	:args :fiber/member)
 
 (defn- upd-member
 	[m]
 	(-> m
 		(update-in [:contacts :preferred :type] keyword)
 		(update-in [:contacts :other] #(mapv (fn [c] (update c :type keyword)) %))
-		(update :dcs #(mapv (fn [dc] {:date    (:date dc)
-									  :amount  (bigdec (:amount dc))
-									  :tax     (bigdec (:tax dc))
-									  :dc-type (keyword (:dc-type dc))
-									  :year    (:year dc)}) %))))
+		(update :dcs #(mapv (fn [dc] (update dc :dc-type keyword)) %))))
 
 (defn- upd-members
 	[ms]
@@ -268,71 +250,69 @@
 
 (defn get-member
 	[id]
+	{:pre [(utils/q-valid? :member/_id id)]
+	 :post [(utils/q-valid? :fiber/member %)]}
 	(upd-member (mc-find-one-as-map "get-member" members {:_id id})))
-(s/fdef get-member
-	:args :member/_id
-	:ret  :fiber/member)
 
 (defn get-members
 	([]
+	{:post [(utils/q-valid? (s/* :fiber/member) %)]}
 	(upd-members (mc-find-maps "get-members" members {})))
 	([year]
+	{:pre [(utils/q-valid? :fiber/year year)]
+	 :post [(utils/q-valid? (s/* :fiber/member) %)]}
 	(upd-members (mc-find-maps "get-members" members
 		{$and [{:from-to.from {$lte (t/date-time year 12 31)}}
 		       {$or [{:from-to.to nil}
 		             {:from-to.to {$gte (t/date-time year 1 1)}}]}]}))))
-(s/fdef get-members
-	:args (s/? :fiber/year)
-	:ret  (s/* :fiber/member))
 
 (defn get-current-members
 	[]
-	(upd-members (mc-find-maps "get-members" members
+	{:post [(utils/q-valid? (s/* :fiber/member) %)]}
+	(upd-members (mc-find-maps "get-current-members" members
 		{$and [{:from-to.from {$lte (l/local-now)}}
 			   {:from-to.to nil}]})))
 
 (defn add-member
 	[member]
+	[:pre [(utils/q-valid? :fiber/member member)]]
 	(when (memberid-exists? (:_id member))
 		(throw (Exception. "duplicate member ID")))
 	(mc-insert "add-member" members member))
-(s/fdef add-member
-	:args :fiber/member)
 
 (defn add-member-payment
 	[memberid amount year]
-	(mc-update-by-id "add-member-payment" members memberid
-		{$set {:date (l/local-now)
-			   :amount amount
-		 	   :tax 0M
-			   :type :payment
-			   :year year}}))
-(s/fdef add-member-payment
-	:args (s/cat :memberid :member/memberid :amount :fiber/amount :year :fiber/year))
+	{:pre [(utils/q-valid? :member/memberid memberid) (utils/q-valid? :fiber/amount amount) (utils/q-valid? :fiber/year year)]}
+	(let [dc {:date    (l/local-now)
+			  :amount  amount
+		 	  :tax     0.0
+			  :dc-type :payment
+			  :year    year}]
+		(s/assert :member/dc-entry dc)
+		(mc-update-by-id "add-member-payment" members memberid
+			{$push {:dcs dc}})))
 
 ;;-----------------------------------------------------------------------------
 ;; config
 
 (defn add-config
 	[config]
+	{:pre [(utils/q-valid? :fiber/config config)]}
 	(mc-insert "insert-config" configs config))
-(s/fdef insert-config
-	:args :fiber/config)
 
 (defn get-config-at
 	[year]
-	(->> (mc-find-maps "get-config-at" configs {:year {$lte (t/date-time year 12 31)}})
-		 (sort-by :year)
+	{:pre [(utils/q-valid? :fiber/year year)]
+	 :post [(utils/q-valid? :fiber/config %)]}
+	(->> (mc-find-maps "get-config-at" configs
+			{:from {$lte (t/date-time year 12 31)}})
+		 (sort-by :from)
 		 last))
-(s/fdef get-config-at
-	:args :fiber/year
-	:ret  :fiber/config)
 
 (defn get-configs
 	[]
+	{:post [(utils/q-valid? (s/* :fiber/config) %)]}
 	(mc-find-maps "get-configs" configs {}))
-(s/fdef get-configs
-	:ret  (s/* :fiber/config))
 
 ;;------------------------------------------------------------------------------------
 

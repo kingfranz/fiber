@@ -20,20 +20,20 @@
             					[page       :as hp]
             					[util       :as hu])
             	(clojure 		[string     :as str]
-            					[spec       :as s]
-            					[set        :as set])))
+            					[set        :as set])
+            	[clojure.spec.alpha :as s]))
 
 ;;-----------------------------------------------------------------------------
 
 (defn get-avail-estates
 	[]
+	{:post [(utils/q-valid? :fiber/estate %)]}
 	(->> (db/get-estates)
 		 (remove #(some? (some (fn [{{from :from to :to} :from-to}] (nil? to)) (:owners %))))))
-(s/fdef get-avail-estates
-	:ret (s/* :fiber/estate))
 
 (defn contact-row
 	[idx contacts]
+	{:pre [(utils/q-valid? (s/int-in 0 6) idx) (utils/q-valid? :member/contacts contacts)]}
 	(let [cn (+ (count (:other contacts)) 1)
 		  c (if (< idx cn)
 				(if (zero? idx)
@@ -45,8 +45,6 @@
 				               (vals common/contact-map)
 				               (get common/contact-map (:type c)))]
 			[:td.txtcol (hf/text-field (utils/mk-tag "cvalue" idx) (:value c))]]))
-(s/fdef contact-row
-	:args (s/cat :idx (s/int-in 0 6) :contacts :member/contacts))
 
 (defn edit-member
 	[memberid]
@@ -147,7 +145,7 @@
 						[:tr
 							[:td (hf/label :xx "Typ")]
 							[:td (hf/label :xx "Text")]]
-						(for [idx (range 6)] (contact-row idx []))
+						(for [idx (range 6)] (contact-row idx {:preferred {:type :email :value "@"} :other []}))
 						]]]])))
 
 (defn extract-estates

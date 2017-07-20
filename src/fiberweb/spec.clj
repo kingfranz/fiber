@@ -1,24 +1,25 @@
 (ns fiberweb.spec
-	(:require (fiberweb [config      	:as config])
-	          (clojure 	[spec         :as s]
-			  			[set   		:as set]
-			  			[string       :as str])
-			  (clj-time [core        :as t]
-			  			[format      :as f]
-			  			[local       :as l])
-			  (taoensso [timbre      :as timbre])))
+	(:require (fiberweb [config     :as config])
+	          (clojure 	[set 		:as set]
+			  			[string     :as str])
+	          [clojure.spec.alpha :as s]
+			  (clj-time [core       :as t]
+			  			[format     :as f]
+			  			[local      :as l])
+			  (taoensso [timbre     :as timbre])))
 
 ;;------------------------------------------------------------------------------------
 
-(s/def :fiber/string         (s/and string? seq))
-(s/def :fiber/valid-month    (s/int-in 1 13))
-(s/def :fiber/date           #(instance? org.joda.time.DateTime %))
-(s/def :fiber/amount         decimal?)
-(s/def :fiber/tax            decimal?)
-(s/def :fiber/note           string?)
-(s/def :fiber/year           (s/int-in config/min-year (inc config/max-year)))
-(s/def :fiber/fromyear       #(instance? org.joda.time.DateTime %))
-(s/def :fiber/toyear         (s/nilable #(instance? org.joda.time.DateTime %)))
+(s/def :fiber/string      (s/and string? seq))
+(s/def :fiber/valid-month (s/int-in 1 13))
+(s/def :fiber/date        #(instance? org.joda.time.DateTime %))
+(s/def :fiber/amount      float?)
+(s/def :fiber/tax         float?)
+(s/def :fiber/note        string?)
+(s/def :fiber/year        (s/int-in config/min-year (inc config/max-year)))
+(s/def :fiber/from        #(instance? org.joda.time.DateTime %))
+(s/def :fiber/to          (s/nilable #(instance? org.joda.time.DateTime %)))
+(s/def :fiber/from-to     (s/keys :req-un [:fiber/from :fiber/to]))
 
 ;;-----------------------------------------------------------------------------
 ;; contact
@@ -48,9 +49,8 @@
 (defonce memberid-regex #"member-([0-9])+")
 (s/def :member/_id      #(and (string? %) (re-matches memberid-regex %)))
 
-(s/def :fiber/from-to   (s/keys :req-un [:fiber/from :fiber/to]))
-
-(s/def :member/estates  (s/* (s/keys :req-un [:estate/_id :estate/address :fiber/from-to])))
+(s/def :member/estate   (s/keys :req-un [:estate/_id :estate/address :fiber/from-to]))
+(s/def :member/estates  (s/* :member/estate))
 
 (s/def :member/name     :fiber/string)
 
@@ -70,14 +70,14 @@
                                	  		 :member/dcs
                                	  		 :fiber/note]))
 
-(s/def :member/feeamount         decimal?)
-(s/def :member/feetax            decimal?)
-(s/def :member/payamount         decimal?)
-(s/def :member/total             decimal?)
+(s/def :member/feeamount         float?)
+(s/def :member/feetax            float?)
+(s/def :member/payamount         float?)
+(s/def :member/total             float?)
 
-(s/def :fiber/member-sum         (s/keys :req-un [:member/feeamount
-		 										  :member/feetax
-		 										  :member/payamount
+(s/def :fiber/member-sum         (s/keys :req-un [:member/fee-amount
+		 										  :member/fee-tax
+		 										  :member/pay-amount
 		 										  :member/total]))
 
 ;;------------------------------------------------------------------------------------
@@ -127,39 +127,43 @@
 			                        		      :estate/billing-intervals
 			                        		      :fiber/note]))
 
-(s/def :estate/conamount         decimal?)
-(s/def :estate/contax            decimal?)
-(s/def :estate/opamount          decimal?)
-(s/def :estate/optax             decimal?)
-(s/def :estate/payamount         decimal?)
-(s/def :estate/total             decimal?)
+(s/def :estate/con-amount        float?)
+(s/def :estate/con-tax           float?)
+(s/def :estate/op-amount         float?)
+(s/def :estate/op-tax            float?)
+(s/def :estate/pay-amount        float?)
+(s/def :estate/total             float?)
 
-(s/def :fiber/estate-sum         (s/keys :req-un [:estate/conamount
-		 										  :estate/contax
-		 										  :estate/opamount
-		 										  :estate/optax
-		 										  :estate/payamount
+(s/def :fiber/estate-sum         (s/keys :req-un [:estate/con-amount
+		 										  :estate/con-tax
+		 										  :estate/op-amount
+		 										  :estate/op-tax
+		 										  :estate/pay-amount
 		 										  :estate/total]))
 
 ;;------------------------------------------------------------------------------------
 ;; config
 ;;------------------------------------------------------------------------------------
 
-(s/def :conf/entered       :fiber/date)
-(s/def :conf/membershipfee decimal?)
-(s/def :conf/membershiptax (s/and decimal? #(>= % 0.0M) #(< % 1.0M)))
-(s/def :conf/connectionfee decimal?)
-(s/def :conf/connectiontax (s/and decimal? #(>= % 0.0M) #(< % 1.0M)))
-(s/def :conf/operatorfee   decimal?)
-(s/def :conf/operatortax   (s/and decimal? #(>= % 0.0M) #(< % 1.0M)))
+(s/def :conf/_id           :fiber/date)
+(s/def :conf/membership-fee float?)
+(s/def :conf/membership-tax float?)
+(s/def :conf/connection-fee float?)
+(s/def :conf/connection-tax float?)
+(s/def :conf/operator-fee   float?)
+(s/def :conf/operator-tax   float?)
+(s/def :conf/entry-fee      float?)
+(s/def :conf/entry-tax      float?)
 
-(s/def :fiber/config (s/keys :req-un [:conf/entered
-								  	  :conf/membershipfee
-								  	  :conf/membershiptax
-								  	  :conf/connectionfee
-								  	  :conf/connectiontax
-								  	  :conf/operatorfee
-								  	  :conf/operatortax
-								  	  :fiber/fromyear]))
+(s/def :fiber/config (s/keys :req-un [:conf/_id
+								  	  :conf/membership-fee
+								  	  :conf/membership-tax
+								  	  :conf/connection-fee
+								  	  :conf/connection-tax
+								  	  :conf/operator-fee
+								  	  :conf/operator-tax
+								  	  :conf/entry-fee
+								  	  :conf/entry-tax
+								  	  :fiber/from]))
 
 ;;------------------------------------------------------------------------------------

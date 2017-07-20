@@ -4,7 +4,8 @@
  	          					[utils      :as utils]
  	          					[config     :as config]
  	          					[spec       :as spec])
- 	          	(ring.util 		[response   :as ring])
+ 	          	(taoensso 		[timbre   	:as log])
+            	(ring.util 		[response   :as ring])
                 (garden 		[core       :as g]
             					[units      :as u]
             					[selectors  :as sel]
@@ -23,8 +24,8 @@
             					[util       :as hu])
             	(clojure 		[string     :as str]
             					[set        :as set]
-            					[edn        :as edn]
-            					[spec       :as s])))
+            					[edn        :as edn])
+            	[clojure.spec.alpha :as s]))
 
 ;;-----------------------------------------------------------------------------
 
@@ -50,17 +51,17 @@
 
 (defn member?
 	[m-or-e]
+	{:pre [(or (utils/q-valid? :member/_id m-or-e) (utils/q-valid? :estate/_id m-or-e)
+		       (utils/q-valid? :fiber/member m-or-e) (utils/q-valid? :fiber/member m-or-e))]
+	 :post [(utils/q-valid? boolean? %)]}
 	(some? (re-matches spec/memberid-regex (if (string? m-or-e) m-or-e (:_id m-or-e)))))
-(s/fdef member?
-	:args (s/alt :mid :member/_id
-				 :eid :estate/_id
-				 :estate :fiber/estate
-				 :member :fiber/member)
-	:ret  boolean?)
 
 (defn mk-ft
 	[title id m header?]
-	(prn "mk-ft:" m)
+	{:pre [(utils/q-valid? string? title)
+		   (or (utils/q-valid? :estate/_id id) (utils/q-valid? :member/_id id))
+		   (or (utils/q-valid? :fiber/estate m) (utils/q-valid? :fiber/member m))
+		   (utils/q-valid? boolean? header?)]}
 	[:table
 		(when header?
 			(list
@@ -95,14 +96,11 @@
 							   (utils/mk-tag "tomonth" id) 
 							   config/month-range
 							   (some-> m :from-to :to t/month))]]])
-(s/fdef mk-ft
-	:args (s/cat :title string?
-				 :id (s/alt :eid :estate/_id :mid :member/_id)
-				 :m (s/alt :estate :fiber/estate :member :fiber/member)
-				 :header? boolean?))
 
 (defn extract-ft
 	[params id]
+	{:pre [(utils/q-valid? map? params) (utils/q-valid? string? id)]
+	 :post [(utils/q-valid? :fiber/from-to %)]}
 	{:from (t/date-time (Integer/valueOf (get params (utils/mk-tag "fromyear" id)))
 						(Integer/valueOf (get params (utils/mk-tag "frommonth" id))) 1)
 	 :to   (when (some? (get params (utils/mk-tag "endtag" id)))
@@ -113,29 +111,26 @@
 
 (defn mk-acts
 	[eid months]
+	{:pre [(utils/q-valid? :estate/_id eid) (utils/q-valid? :estate/months months)]}
 	[:table
 		[:tr
 			(for [i config/month-range]
 				[:td {:width 30} (hf/check-box {:class "cb"} (utils/mk-tag eid i) (some #{i} months))])]])
-(s/fdef mk-acts
-	:args (s/cat :eid :estate/_id :months :estate/months))
 
 (defn show-acts
 	[months]
+	{:pre [(utils/q-valid? :estate/months months)]}
 	[:table
 		[:tr
 			(map (fn [i] [:td {:width 30} (when (some #{i} months) "X")]) config/month-range)]])
-(s/fdef show-acts
-	:args :estate/months)
 
 (defn get-months
 	[id params]
+	{:pre [(utils/q-valid? :estate/_id id) (utils/q-valid? map? params)]
+	 :post [(utils/q-valid? :estate/months %)]}
 	(set (for [i config/month-range
 		:when (some? (get params (utils/mk-tag id i)))]
 		i)))
-(s/fdef get-months
-	:args (s/cat :id :estate/_id :params map?)
-	:ret  :estate/months)
 
 ;;-----------------------------------------------------------------------------
 
@@ -197,8 +192,8 @@
 				[:tr
 					[:td.ddcol.rpad (hf/text-field {:class "rafield"} :date   (utils/today-str))]
 					[:td.rpad       (hf/drop-down  {:class "rafield"} :dc-type (vals (if (member? id) memberdc-map estatedc-map)) :payment)]
-					[:td.dcol.rpad  (hf/text-field {:class "rafield"} :amount 0M)]
-					[:td.dcol.rpad  (hf/text-field {:class "rafield"} :tax    0M)]
+					[:td.dcol.rpad  (hf/text-field {:class "rafield"} :amount 0)]
+					[:td.dcol.rpad  (hf/text-field {:class "rafield"} :tax    0)]
 					[:td.dcol       (hf/text-field {:class "rafield"} :year   (utils/current-year))]
 					(when-not (member? id)
 						[:td (mk-acts id 0)])
@@ -208,8 +203,8 @@
 	[params]
 	(let [dc {:date    (f/parse (:date params))
 		      :dc-type (get (if (member? (:_id params)) imemberdc-map iestatedc-map) (:dc-type params))
-		      :amount  (utils/param->bigdec params :amount)
-		      :tax     (utils/param->bigdec params :tax)
+		      :amount  (utils/param->double params :amount)
+		      :tax     (utils/param->double params :tax)
 		      :year    (utils/param->int params :year)}]
 		(if (member? (:_id params))
 			(db/add-memberdc (:_id params) dc)

@@ -21,11 +21,11 @@
             					[form       :as hf]
             					[page       :as hp]
             					[util       :as hu])
-            	(taoensso 		[timbre     :as timbre])
+            	(taoensso 		[timbre     :as log])
             	(clojure.java 	[io         :as io])
             	(clojure 		[string     :as str]
-            					[spec       :as s]
-            					[set        :as set])))
+            					[set        :as set])
+            	[clojure.spec.alpha :as s]))
 
 ;;-----------------------------------------------------------------------------
 
@@ -74,15 +74,29 @@
 					[:td.brdr              (hf/label :xx (:note x))]])
 			(db/get-members))]))
 
+(s/def :exp/estate-ga* (s/keys :req-un [:estate/_id :estate/location :estate/address :fiber/from-to :estate/interval]))
+
+(defn mk-ga-estate
+	[m-estate]
+	{:pre [(utils/q-valid? :member/estate m-estate)]
+	 :post [(utils/q-valid? :exp/estate-ga* %)]}
+	(let [estate   (db/get-estate (:_id m-estate))
+		  estate*  (select-keys estate [:_id :location :address :from-to])
+		  bis      (:billing-intervals estate)
+		  bi-entry (utils/get-year (utils/current-year) bis)]
+		(assoc estate* :interval (:interval bi-entry))))
+
+(s/def :exp/estate :exp/estate-ga*)
+(s/def :exp/estate-ga (s/merge :fiber/member (s/keys :req-un [:exp/estate])))
+
 (defn get-all
 	[]
-	(for [member (db/get-current-members)]
-		(for [m-estate (:estates member)
-			:let [estate (db/get-estate (:_id m-estate))
-				  ee (assoc (select-keys estate [:_id :location :address :from-to])
-				  			:interval (:interval (utils/get-year (utils/current-year) (:billing-intervals estate))))]
-			:when (-> m-estate :from-to :to nil?)]
-			(assoc (dissoc member :estates) :estate ee))))
+	{:post [(utils/q-valid? (s/* :exp/estate-ga) %)]}
+	(flatten 
+		(for [member (db/get-current-members)]
+			(for [m-estate (:estates member)
+				:when (-> m-estate :from-to :to nil?)]
+				(assoc member :estate (mk-ga-estate m-estate))))))
 
 (defn mk-all-lst
 	[]
@@ -91,11 +105,11 @@
 		 (-> m :from-to :from utils/year-month)
 		 (-> m :name)
 		 (-> m :contacts :preferred :value)
-		 (-> m :estate :_id)
-		 (-> m :estate :location)
-		 (-> m :estate :address)
-		 (-> m :estate :interval name)
-		 (-> m :estate :from-to :from utils/year-month)
+		 (some-> m :estate :_id)
+		 (some-> m :estate :location)
+		 (some-> m :estate :address)
+		 (some-> m :estate :interval name)
+		 (some-> m :estate :from-to :from utils/year-month)
 		 ]) (get-all))))
 
 (defn list-all
@@ -121,17 +135,18 @@
 			]
 			(map (fn [m]
 				[:tr
-					[:td.rafield.rpad.brdr (hf/label :xx (-> m :_id))]
+					[:td.rafield.rpad.brdr (hf/label :xx (-> (utils/spy m) :_id))]
 					[:td.dcol.brdr         (hf/label :xx (-> m :from-to :from utils/year-month))]
 					[:td.txtcol.brdr       (hf/label :xx (-> m :name))]
 					[:td.brdr.ccol         (hf/label :xx (-> m :contacts :preferred :value))]
-					[:td.rafield.rpad.brdr (hf/label :xx (-> m :estate :_id))]
-					[:td.txtcol.brdr       (hf/label :xx (-> m :estate :location))]
-					[:td.txtcol.brdr       (hf/label :xx (-> m :estate :address))]
-					[:td.rafield.rpad.brdr (hf/label :xx (-> m :estate :interval name))]
-					[:td.dcol.brdr         (hf/label :xx (-> m :estate :from-to :from utils/year-month))]
-				]) (get-all))
-				]))
+					[:td.rafield.rpad.brdr (hf/label :xx (some-> m :estate :_id))]
+					[:td.txtcol.brdr       (hf/label :xx (some-> m :estate :location))]
+					[:td.txtcol.brdr       (hf/label :xx (some-> m :estate :address))]
+					[:td.rafield.rpad.brdr (hf/label :xx (some-> m :estate :interval name))]
+					[:td.dcol.brdr         (hf/label :xx (some-> m :estate :from-to :from utils/year-month))]
+				])
+			(get-all))
+		]))
 
 (defn export-all-csv
 	[]
