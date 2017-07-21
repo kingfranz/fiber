@@ -59,7 +59,7 @@
 					[:table
 						[:tr
 							[:td (hf/label :xx "ID")]
-							[:td {:width 500} (hf/label :xx estateid)]]
+							[:td {:width 500} (hf/label :xx (utils/scrub-id estateid))]]
 						[:tr
 							[:td (hf/label :xx "Betäckning:")]
 							[:td (hf/text-field :location (:location estate))]]
@@ -172,7 +172,7 @@
 				[:th (hf/label :xx "Namn")]]
 			(map (fn [x]
 				[:tr
-					[:td.rafield.rpad (hf/label :xx (:_id x))]
+					[:td.rafield.rpad (hf/label :xx (utils/scrub-id (:_id x)))]
 					[:td [:a.link-thin {:href (str "/edit/" (:_id x))} (hf/label :xx (:address x))]]])
 				(db/get-estates))]))
 
@@ -210,10 +210,11 @@
 				(map (fn [x]
 					[:tr.brdr 
 						[:td.rafield.rpad (hf/label :xx (some-> (utils/find-first #(-> % :from-to :to nil?) (:owners x))
-													   			(get :_id)))]
+													   			(get :_id)
+													   			utils/scrub-id))]
 						[:td.ncol         (hf/label :xx (some-> (utils/find-first #(-> % :from-to :to nil?) (:owners x))
 													   			(get :name)))]
-						[:td.rafield.rpad (hf/label :xx (:_id x))]
+						[:td.rafield.rpad (hf/label :xx (utils/scrub-id (:_id x)))]
 						[:td.acol         (hf/label :xx (:address x))]
 						[:td.rafield      (hf/label :xx (get (utils/get-year year (:billing-intervals x)) :interval))]
 						[:td.dcol         (hf/check-box {:class "cb"}

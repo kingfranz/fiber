@@ -27,7 +27,7 @@
 
 (defn get-avail-estates
 	[]
-	{:post [(utils/q-valid? :fiber/estate %)]}
+	{:post [(utils/q-valid? (s/* :fiber/estate) %)]}
 	(->> (db/get-estates)
 		 (remove #(some? (some (fn [{{from :from to :to} :from-to}] (nil? to)) (:owners %))))))
 
@@ -53,7 +53,7 @@
 		(hf/form-to
 			[:post "/update-member"]
 			(hf/hidden-field :_id memberid)
-			(hf/hidden-field :eids (map :_id (:estates member)))
+			(hf/hidden-field :estates (:estates member))
 			[:table
 				[:tr
 					[:td [:a.link-head {:href "/"} "Home"]]
@@ -64,7 +64,7 @@
 				[:table
 					[:tr
 						[:td.rafield.rpad (hf/label :xx "Medlemsnummer")]
-						[:td (hf/label :x (:memberid member))]]
+						[:td (hf/label :x (utils/scrub-id memberid))]]
 					[:tr
 						[:td.rafield.rpad (hf/label :xx "Namn")]
 						[:td.txtcol (hf/text-field :name (:name member))]]
@@ -150,10 +150,7 @@
 
 (defn extract-estates
 	[params]
-	(for [eid (:eids params)]
-	    {:_id     eid
-	     :address (:address (db/get-estate eid))
-	     :from-to (common/extract-ft params eid)}))
+	(map #(update % :from-to (common/extract-ft params (:_id %))) (:estates params)))
 	     
 (defn extract-contacts
 	[params]
@@ -199,13 +196,13 @@
 				[:th (hf/label :xx "Namn")]]
 			(map (fn [x]
 				[:tr
-					[:td.rafield.rpad (hf/label :xx (:estateid x))]
+					[:td.rafield.rpad (hf/label :xx (utils/scrub-id (:_id x)))]
 					[:td
 						[:a.link-thin {:href (if (some? memberid)
 												 (str "/add-estate/" memberid "/" (:_id x))
 												 (str "/new-member/" (:_id x)))}
 									  (hf/label :xx (:address x))]]])
-				(get-avail-estates))]))
+				(sort-by #(Integer/valueOf (utils/scrub-id (:_id %))) (get-avail-estates)))]))
 
 (defn choose-member
 	[]
@@ -219,9 +216,9 @@
 				[:th (hf/label :xx "Namn")]]
 			(map (fn [x]
 				[:tr
-					[:td.rafield.rpad (hf/label :xx (:_id x))]
+					[:td.rafield.rpad (hf/label :xx (utils/scrub-id (:_id x)))]
 					[:td [:a.link-thin {:href (str "/edit/" (:_id x))} (hf/label :xx (str (:name x)))]]])
-				(db/get-members))]))
+				(sort-by #(Integer/valueOf (utils/scrub-id (:_id %))) (db/get-members)))]))
 
 
 

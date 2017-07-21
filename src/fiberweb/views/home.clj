@@ -73,7 +73,6 @@
 	[]
 	(layout/common "Myrhult-Bålerud Fiber förening" [css-home-tree]
 		[:p (str "Fiber - Medlemmar: " (db/member-count) " Fastigheter: " (db/estate-count))]
-		[:p (str "check-asserts? = " (s/check-asserts?))]
 		[:ul.tree
 			[:li "System"
 				[:ul

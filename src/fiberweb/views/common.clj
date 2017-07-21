@@ -52,7 +52,7 @@
 (defn member?
 	[m-or-e]
 	{:pre [(or (utils/q-valid? :member/_id m-or-e) (utils/q-valid? :estate/_id m-or-e)
-		       (utils/q-valid? :fiber/member m-or-e) (utils/q-valid? :fiber/member m-or-e))]
+		       (utils/q-valid? :fiber/member m-or-e) (utils/q-valid? :fiber/estate m-or-e))]
 	 :post [(utils/q-valid? boolean? %)]}
 	(some? (re-matches spec/memberid-regex (if (string? m-or-e) m-or-e (:_id m-or-e)))))
 
@@ -60,7 +60,7 @@
 	[title id m header?]
 	{:pre [(utils/q-valid? string? title)
 		   (or (utils/q-valid? :estate/_id id) (utils/q-valid? :member/_id id))
-		   (or (utils/q-valid? :fiber/estate m) (utils/q-valid? :fiber/member m))
+		   (or (utils/q-valid? :fiber/estate m) (utils/q-valid? :fiber/member m) (utils/q-valid? :member/estate m))
 		   (utils/q-valid? boolean? header?)]}
 	[:table
 		(when header?
@@ -190,13 +190,13 @@
 						[:td (hf/label :xx "Månad")])
 				]
 				[:tr
-					[:td.ddcol.rpad (hf/text-field {:class "rafield"} :date   (utils/today-str))]
+					[:td.ddcol.rpad (hf/text-field {:class "rafield"} :date    (utils/today-str))]
 					[:td.rpad       (hf/drop-down  {:class "rafield"} :dc-type (vals (if (member? id) memberdc-map estatedc-map)) :payment)]
-					[:td.dcol.rpad  (hf/text-field {:class "rafield"} :amount 0)]
-					[:td.dcol.rpad  (hf/text-field {:class "rafield"} :tax    0)]
-					[:td.dcol       (hf/text-field {:class "rafield"} :year   (utils/current-year))]
+					[:td.dcol.rpad  (hf/text-field {:class "rafield"} :amount  0)]
+					[:td.dcol.rpad  (hf/text-field {:class "rafield"} :tax     0)]
+					[:td.dcol       (hf/text-field {:class "rafield"} :year    (utils/current-year))]
 					(when-not (member? id)
-						[:td (mk-acts id 0)])
+						[:td (mk-acts id #{})])
 				]])))
 
 (defn new-dc

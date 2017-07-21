@@ -43,6 +43,12 @@
 	(prn "spy:" t x)
 	x))
 
+(defn scrub-id
+	[id]
+	{:pre [(or (q-valid? :estate/_id id) (q-valid? :member/_id id))]
+	 :post [(q-valid? string? %) (q-valid? #(re-matches #"\d+" %) %)]}
+	(str/replace id #"[a-z]+-(\d+)" "$1"))
+
 (defn drop-nth
 	[n coll]
 	{:pre [(pos? n) (coll? coll)]

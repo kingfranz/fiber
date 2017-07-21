@@ -20,8 +20,8 @@
 	(cc/GET "/" []
 	    (home/home-page))
 
-	(cc/GET "/new-dc/:type/:id" [type id]
-	    (common/add-dc type id))
+	(cc/GET "/new-dc/:id" [id]
+	    (common/add-dc id))
 	(cc/POST "/new-dc" request
 		(common/new-dc (:params request)))
 	(cc/GET "/delete-dc/:type/:id/:dcid" [type id dcid]
