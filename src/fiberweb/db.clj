@@ -240,9 +240,9 @@
 (defn- upd-member
 	[m]
 	(-> m
-		(update-in [:contacts :preferred :type] keyword)
-		(update-in [:contacts :other] #(mapv (fn [c] (update c :type keyword)) %))
-		(update :dcs #(mapv (fn [dc] (update dc :dc-type keyword)) %))))
+		(update :contacts #(mapv (fn [c] (update c :type keyword)) %))
+		(update :dcs #(mapv (fn [dc] (update dc :dc-type keyword)) %))
+		))
 
 (defn- upd-members
 	[ms]

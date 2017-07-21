@@ -34,17 +34,11 @@
 (defn contact-row
 	[idx contacts]
 	{:pre [(utils/q-valid? (s/int-in 0 6) idx) (utils/q-valid? :member/contacts contacts)]}
-	(let [cn (+ (count (:other contacts)) 1)
-		  c (if (< idx cn)
-				(if (zero? idx)
-					(:preferred contacts)
-					(nth (:other contacts) (dec idx)))
-				{})]
-		[:tr
-			[:td (hf/drop-down (utils/mk-tag "ctype" idx)
-				               (vals common/contact-map)
-				               (get common/contact-map (:type c)))]
-			[:td.txtcol (hf/text-field (utils/mk-tag "cvalue" idx) (:value c))]]))
+	[:tr
+		[:td (hf/drop-down (utils/mk-tag "ctype" idx)
+			               (vals common/contact-map)
+			               (get common/contact-map (some-> contacts (common/nth-contact idx) :type)))]
+		[:td.txtcol (hf/text-field (utils/mk-tag "cvalue" idx) (some-> contacts (common/nth-contact idx) :value))]])
 
 (defn edit-member
 	[memberid]
@@ -145,7 +139,8 @@
 						[:tr
 							[:td (hf/label :xx "Typ")]
 							[:td (hf/label :xx "Text")]]
-						(for [idx (range 6)] (contact-row idx {:preferred {:type :email :value "@"} :other []}))
+						(for [idx (range 6)]
+							(contact-row idx []))
 						]]]])))
 
 (defn extract-estates
@@ -154,11 +149,12 @@
 	     
 (defn extract-contacts
 	[params]
-	(let [contacts (->> (range 6)
-						(map (fn [i] {:type  (some->> i (utils/mk-tag "ctype") (get common/icontact-map) keyword)
-								      :value (some->> i (utils/mk-tag "cvalue") str/trim)}))
-						(remove #(or (nil? (:type %)) (str/blank? (:value %)))))]
-		{:preferred (first contacts) :other (rest contacts)}))
+	{:post [(utils/q-valid? :member/contacts %)]}
+	(->> (range 6)
+		 (map (fn [i] {:type  (some->> i (utils/mk-tag "ctype") (get common/icontact-map) keyword)
+				       :value (some->> i (utils/mk-tag "cvalue") str/trim)
+					   :preferred (zero? i)}))
+		(remove #(or (nil? (:type %)) (str/blank? (:value %))))))
 
 (defn create-member
 	[{params :params}]

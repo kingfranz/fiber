@@ -69,8 +69,8 @@
 					[:td.rafield.rpad.brdr (hf/label :xx (:_id x))]
 					[:td.txtcol.brdr       (hf/label {:class "txtcol"} :xx (:name x))]
 					[:td.dcol.brdr         (hf/label :xx (utils/year-month (:from (:from-to x))))]
-					[:td.brdr.ccol         (hf/label :xx (-> x :contacts :preferred :value))]
-					[:td.brdr.ccol         (hf/label :xx (-> x :contacts :other first :value))]
+					[:td.brdr.ccol         (hf/label :xx (some-> x :contacts (common/nth-contact 0) :value))]
+					[:td.brdr.ccol         (hf/label :xx (some-> x :contacts (common/nth-contact 1) :value))]
 					[:td.brdr              (hf/label :xx (:note x))]])
 			(db/get-members))]))
 
@@ -104,7 +104,7 @@
 		[(-> m :_id)
 		 (-> m :from-to :from utils/year-month)
 		 (-> m :name)
-		 (-> m :contacts :preferred :value)
+		 (some-> m :contacts (common/nth-contact 0) :value)
 		 (some-> m :estate :_id)
 		 (some-> m :estate :location)
 		 (some-> m :estate :address)
@@ -138,7 +138,7 @@
 					[:td.rafield.rpad.brdr (hf/label :xx (-> (utils/spy m) :_id))]
 					[:td.dcol.brdr         (hf/label :xx (-> m :from-to :from utils/year-month))]
 					[:td.txtcol.brdr       (hf/label :xx (-> m :name))]
-					[:td.brdr.ccol         (hf/label :xx (-> m :contacts :preferred :value))]
+					[:td.brdr.ccol         (hf/label :xx (some-> m :contacts (common/nth-contact 0) :value))]
 					[:td.rafield.rpad.brdr (hf/label :xx (some-> m :estate :_id))]
 					[:td.txtcol.brdr       (hf/label :xx (some-> m :estate :location))]
 					[:td.txtcol.brdr       (hf/label :xx (some-> m :estate :address))]
@@ -185,12 +185,6 @@
 		   	]
 		  	"fulllista.pdf")))
 
-(defn nth*
-	[coll n]
-	(if (< n (count coll))
-		(get (nth coll n) :value)
-		""))
-
 (defn mk-member-lst
 	[]
 	(vec
@@ -198,10 +192,10 @@
 			[(:_id m)
 			 (:name m)
 		     (-> m :from-to :from utils/year-month)
-		     (-> m :contacts :preferred :value)
-		     (-> m :contacts :other (nth* 0))
-		     (-> m :contacts :other (nth* 1))
-		     (-> m :contacts :other (nth* 2))
+		     (some-> m :contacts (common/nth-contact 0) :value)
+		     (some-> m :contacts (common/nth-contact 1) :value)
+		     (some-> m :contacts (common/nth-contact 2) :value)
+		     (some-> m :contacts (common/nth-contact 3) :value)
 		     (:note m)])
 		(db/get-current-members))))
 

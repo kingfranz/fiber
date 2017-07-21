@@ -49,6 +49,14 @@
 
 ;;-----------------------------------------------------------------------------
 
+(defn nth-contact
+	[contacts idx]
+	{:pre [(utils/q-valid? (s/int-in 0 6) idx) (utils/q-valid? :member/contacts contacts)]
+	 :post [(utils/q-valid? (s/nilable :member/contact) %)]}
+	(if (>= idx (count contacts))
+		nil
+		(nth (sort-by :preferred contacts) idx)))
+
 (defn member?
 	[m-or-e]
 	{:pre [(or (utils/q-valid? :member/_id m-or-e) (utils/q-valid? :estate/_id m-or-e)

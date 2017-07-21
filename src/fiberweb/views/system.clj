@@ -43,10 +43,8 @@
 	[estate]
 	{:pre [(utils/q-valid? :fiber/estate estate)]
 	 :post [(utils/q-valid? (s/keys :req-un [:sys/name :sys/contact]) %)]}
-	(if-let [mid (current-owner estate)]
-		(if-let [owner (db/get-member mid)]
-			{:name (:name owner) :contact (-> owner :contacts :preferred :value)}
-			{:name "" :contact ""})
+	(if-let [owner (some-> estate current-owner db/get-member)]
+		{:name (:name owner) :contact (-> owner :contacts (utils/nth-contact 0) :value)}
 		{:name "" :contact ""}))
 
 (defn calc-member-sum

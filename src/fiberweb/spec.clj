@@ -27,19 +27,18 @@
 
 (s/def :addr/value          :fiber/string)
 (s/def :addr/type           #{:address})
-(s/def :contact/addr-entry  (s/keys :req-un [:addr/type :addr/value]))
+(s/def :contact/addr-entry  (s/keys :req-un [:addr/type :addr/value :contact/preferred]))
 (s/def :email/value         :fiber/string)
 (s/def :email/type          #{:email})
-(s/def :contact/email-entry (s/keys :req-un [:email/type :email/value]))
+(s/def :contact/email-entry (s/keys :req-un [:email/type :email/value :contact/preferred]))
 (s/def :phone/value    	    :fiber/string)
 (s/def :phone/type     	    #{:phone})
-(s/def :contact/phone-entry (s/keys :req-un [:phone/type :phone/value]))
+(s/def :contact/phone-entry (s/keys :req-un [:phone/type :phone/value :contact/preferred]))
+(s/def :contact/preferred   boolean?)
 (s/def :contact/entry       (s/or :addr  :contact/addr-entry
 							 	  :email :contact/email-entry
 							 	  :phone :contact/phone-entry))
-(s/def :contact/other       (s/* :contact/entry))
-(s/def :contact/preferred   :contact/entry)
-(s/def :member/contacts     (s/keys :req-un [:contact/preferred :contact/other]))
+(s/def :member/contacts     (s/* :contact/entry))
 
 ;;-----------------------------------------------------------------------------
 ;; member
