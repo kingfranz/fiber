@@ -639,7 +639,7 @@
 
 (defn date-frmtr
 	[k v]
-	(if (or (= k :date) (= k :from) (and (= k :to) (some? v)))
+	(if (or (= k :date) (= k :from) (and (= k :to) (some? v)) (and (= k :_id) (= (type v) org.joda.time.DateTime)))
 		(str "ISODate('" (f/unparse (f/with-zone (f/formatters :date-time-no-ms) (t/default-time-zone)) v) "')")
 		v))
 
@@ -647,9 +647,9 @@
 	[dc]
 	(let [dc* {
 		  :date    (c/from-sql-time (:date dc))
-		  :amount  (bigdec (:amount dc))
-		  :tax     (bigdec (:tax dc))
-		  :dc-type (keyword (str/replace (:type dc) "-" ""))
+		  :amount  (double (:amount dc))
+		  :tax     (double (:tax dc))
+		  :dc-type (keyword (:type dc))
 		  :year    (:year dc)}
 		  dc+ (if (some? (:months dc))
 				(assoc dc* :months (months->arr (:months dc)))
@@ -671,7 +671,7 @@
 		  estateacts (db/get-activities-all)
 		  estatedcs  (db/get-estatedcs-all)
 		  mes        (db/get-membersestates)
-		  members   (db/get-members)]
+		  members    (db/get-members)]
 		(spit "estates.json" 
 			(str/replace (json/write-str 
 				(vec 
@@ -704,32 +704,25 @@
 
 ;"ISODate('2013-01-01T01:00:00+01:00')"
 
-(defn trans-contact
-	[c]
-	{:type (keyword (:type c)) :value (:value c)})
-
 (defn export-mongo-member
 	[]
 	(let [members   (db/get-members)
 		  mes       (db/get-membersestates)
-		  estates    (db/get-estates)
-		  contacts  (db/get-contacts-all)
+		  estates   (db/get-estates)
+		  contacts* (db/get-contacts-all)
 		  memberdcs (db/get-memberdcs-all)]
 		(spit "members.json" 
 			(str/replace (json/write-str 
 				(vec 
-					(for [member members
-						:let [conts (->> contacts (filter #(= (:memberid %) (:memberid member))))]]
+					(for [member members]
 			   			{:_id      (str "member-" (:memberid member))
 						 :name     (:name member)
 						 :from-to  (trans-ft (:fromyear member) (:toyear member))
-						 :contacts {:preferred (->> conts
-												   (filter #(= (:preferred %) 1))
-												   first
-												   trans-contact)
-								   :other (->> conts
-								   			   (remove #(= (:preferred %) 1))
-								   			   (mapv trans-contact))}
+						 :contacts (->> contacts*
+						 				(filter #(= (:memberid %) (:memberid member)))
+						 				(map #(select-keys % [:type :value :preferred]))
+						 				(map #(update % :type keyword))
+						 				(mapv (fn [c] (update c :preferred #(= % 1)))))
 						 :estates  (->> mes
 									   (filter #(= (:memberid %) (:memberid member)))
 									   (mapv (fn [me] {:_id (str "estate-" (:estateid me))
@@ -749,13 +742,18 @@
 	(spit "configs.json" 
 		(str/replace (json/write-str 
 			(vec 
-				(for [config (db/get-configs)
-					:let [nc (select-keys config [:membershipfee :membershiptax
-		  										   :connectionfee :connectiontax
-		  										   :operatorfee   :operatortax])]]
-					(assoc nc :_id (str (:entered config))
-			 			   	  :from (t/date-time (utils/get-year (:fromyear config)) 
-			 			   		                 (utils/get-month (:fromyear config)) 1))))
+				(for [config (db/get-configs)]
+					{:_id            (c/from-sql-time (:entered config))
+					 :from           (t/date-time (utils/get-year (:fromyear config)) 
+			 			   		                  (utils/get-month (:fromyear config)) 1)
+					 :membership-fee (:membershipfee config)
+					 :membership-tax (* (:membershiptax config) (:membershipfee config))
+					 :connection-fee (:connectionfee config)
+					 :connection-tax (* (:connectiontax config) (:connectionfee config))
+					 :operator-fee   (:operatorfee config)
+					 :operator-tax   (* (:operatortax config) (:operatorfee config))
+					 :entry-fee      25000.0
+					 :entry-tax      0.0}))
 			:value-fn date-frmtr) #"\"ISODate\(([^)]+)\)\"" "ISODate($1)")))
 
 (defn export-json
