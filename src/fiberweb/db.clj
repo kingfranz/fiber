@@ -24,7 +24,7 @@
 
 ;;-----------------------------------------------------------------------------
 
-(defonce fiberdb* {
+(defonce fiberdb {
 	:classname   "com.mysql.cj.jdbc.Driver"
 	:host        "192.168.0.42"
     :port        3306
@@ -33,7 +33,7 @@
     :user        "sa"
     :password    "wiggins"})
 
-(defonce fiberdb {
+(defonce fiberdb* {
 	:classname   "com.mysql.cj.jdbc.Driver"
 	:host        "127.0.0.1"
     :port        3306
