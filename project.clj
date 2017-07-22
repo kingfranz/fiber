@@ -9,6 +9,7 @@
                  [cheshire "5.7.1"]
                  [com.novemberain/monger "3.1.0"]
                  [com.taoensso/timbre "4.10.0"]
+                 [org.clojure/tools.reader "1.0.2"]
                  [clj-pdf "2.2.28"]
                  [org.clojure/data.csv "0.1.4"]
                  [ring "1.6.2"]

@@ -29,21 +29,21 @@
 
 ;;-----------------------------------------------------------------------------
 
-(def memberdc-map (hash-map "membership-fee" "Medlemsavgift"
-	                        "payment"        "Inbetalning"))
+(def memberdc-map (hash-map :membership-fee "Medlemsavgift"
+	                        :payment        "Inbetalning"))
 
 (def imemberdc-map (set/map-invert memberdc-map))
 
-(def estatedc-map (hash-map "connection-fee" "Anslutningsavgift"
-	                        "operator-fee"   "Användningsavgift"
-	                        "payment"        "Inbetalning"
-	                        "entry-fee"      "Insats"))
+(def estatedc-map (hash-map :connection-fee "Anslutningsavgift"
+	                        :operator-fee   "Användningsavgift"
+	                        :payment        "Inbetalning"
+	                        :entry-fee      "Insats"))
 
 (def iestatedc-map (set/map-invert estatedc-map))
 
-(def contact-map (hash-map "address" "Adress"
-						   "email"   "E-Post"
-						   "phone"   "Telefon"))
+(def contact-map (hash-map :address "Adress"
+						   :email   "E-Post"
+						   :phone   "Telefon"))
 
 (def icontact-map (set/map-invert contact-map))
 
@@ -52,10 +52,10 @@
 (defn nth-contact
 	[contacts idx]
 	{:pre [(utils/q-valid? (s/int-in 0 6) idx) (utils/q-valid? :member/contacts contacts)]
-	 :post [(utils/q-valid? (s/nilable :member/contact) %)]}
+	 :post [(utils/q-valid? (s/nilable :contact/entry) %)]}
 	(if (>= idx (count contacts))
 		nil
-		(nth (sort-by :preferred contacts) idx)))
+		(nth (sort-by #(some-> % :preferred not) contacts) idx)))
 
 (defn member?
 	[m-or-e]
@@ -109,11 +109,11 @@
 	[params id]
 	{:pre [(utils/q-valid? map? params) (utils/q-valid? string? id)]
 	 :post [(utils/q-valid? :fiber/from-to %)]}
-	{:from (t/date-time (Integer/valueOf (get params (utils/mk-tag "fromyear" id)))
-						(Integer/valueOf (get params (utils/mk-tag "frommonth" id))) 1)
-	 :to   (when (some? (get params (utils/mk-tag "endtag" id)))
-	 			(t/date-time (Integer/valueOf (get params (utils/mk-tag "toyear" id)))
-	 						 (Integer/valueOf (get params (utils/mk-tag "tomonth" id))) 1))})
+	{:from (t/date-time (some->> id (utils/mk-tag "fromyear") (utils/param->int params))
+						(some->> id (utils/mk-tag "frommonth") (utils/param->int params)) 1)
+	 :to   (when (some->> id (utils/mk-tag "endtag") (get params) some?)
+	 			(t/date-time (some->> id (utils/mk-tag "toyear") (utils/param->int params))
+	 						 (some->> id (utils/mk-tag "tomonth") (utils/param->int params)) 1))})
 
 ;;-----------------------------------------------------------------------------
 

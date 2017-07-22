@@ -44,7 +44,7 @@
 	{:pre [(utils/q-valid? :fiber/estate estate)]
 	 :post [(utils/q-valid? (s/keys :req-un [:sys/name :sys/contact]) %)]}
 	(if-let [owner (some-> estate current-owner db/get-member)]
-		{:name (:name owner) :contact (-> owner :contacts (utils/nth-contact 0) :value)}
+		{:name (:name owner) :contact (-> owner :contacts (common/nth-contact 0) :value)}
 		{:name "" :contact ""}))
 
 (defn calc-member-sum
@@ -133,8 +133,8 @@
 		(doseq [member members-owe]
 			(db/add-memberdc (:_id member)
 				{:date    (l/local-now)
-				 :amount  (:membership-fee config)
-				 :tax     (:membership-tax config)
+				 :amount  (- 0.0 (:membership-fee config))
+				 :tax     (- 0.0 (:membership-tax config))
 				 :dc-type :membership-fee
 				 :year    year}))))
 
@@ -214,8 +214,8 @@
         	(doseq [m qmonths
         		:when (not (some #{m} (:dcs e)))
         		:let [new-dc {:date     (l/local-now)
-        			 :amount   (:connection-fee config)
-        			 :tax      (:connection-fee config)
+        			 :amount   (- 0.0 (:connection-fee config))
+        			 :tax      (- 0.0 (:connection-tax config))
         			 :dc-type  :connection-fee
         			 :year     year
         			 :months   #{m}}]]
@@ -227,7 +227,7 @@
 	[estate year qmonths]
 	{:pre [(utils/q-valid? :fiber/estate estate) (utils/q-valid? :fiber/year year) (utils/q-valid? :estate/months qmonths)]
 	 :post [(utils/q-valid? :estate/months %)]}
-	(->> (utils/spy "get-activities-for:" estate)
+	(->> estate
 		 :activities
 		 (utils/get-year year)
 		 :months
@@ -249,8 +249,8 @@
         		:when (and (not (some #{m} (set (:dcs e))))
         				   (some #{m} (set (:acts e))))
         		:let [new-dc {:date     (l/local-now)
-        			 :amount  (:operatorfee config)
-        			 :tax     (:operatorfee config)
+        			 :amount  (- 0.0 (:operator-fee config))
+        			 :tax     (- 0.0 (:operator-tax config))
         			 :dc-type :operator-fee
         			 :year    year
         			 :months  #{m}}]]

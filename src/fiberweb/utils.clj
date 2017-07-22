@@ -117,9 +117,7 @@
 	[year mcoll]
 	{:pre [(q-valid? :fiber/year year) (q-valid? (s/* map?) mcoll)]
 	 :post [(q-valid? map? %)]}
-	(if (nil? (find-first #(= (:year %) year) mcoll))
-		(prn "get-year:" year mcoll)
-		(find-first #(= (:year %) year) mcoll)))
+	(find-first #(= (:year %) year) mcoll))
 
 ;;-----------------------------------------------------------------------------
 

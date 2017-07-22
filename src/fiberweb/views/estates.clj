@@ -44,7 +44,6 @@
 (defn edit-estate
 	[estateid]
 	(let [estate (db/get-estate estateid)]
-		(prn "estate:" estate)
 		(layout/common "Ändra en Fastighet" []
 		(hf/form-to
 			[:post "/update-estate"]
@@ -174,7 +173,7 @@
 				[:tr
 					[:td.rafield.rpad (hf/label :xx (utils/scrub-id (:_id x)))]
 					[:td [:a.link-thin {:href (str "/edit/" (:_id x))} (hf/label :xx (:address x))]]])
-				(db/get-estates))]))
+				(sort-by #(Integer/valueOf (utils/scrub-id (:_id %))) (db/get-estates)))]))
 
 ;;-----------------------------------------------------------------------------
 

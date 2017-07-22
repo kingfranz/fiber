@@ -66,13 +66,13 @@
 			]
 			(map (fn [x]
 				[:tr
-					[:td.rafield.rpad.brdr (hf/label :xx (:_id x))]
+					[:td.rafield.rpad.brdr (hf/label :xx (some-> x :_id utils/scrub-id))]
 					[:td.txtcol.brdr       (hf/label {:class "txtcol"} :xx (:name x))]
 					[:td.dcol.brdr         (hf/label :xx (utils/year-month (:from (:from-to x))))]
 					[:td.brdr.ccol         (hf/label :xx (some-> x :contacts (common/nth-contact 0) :value))]
 					[:td.brdr.ccol         (hf/label :xx (some-> x :contacts (common/nth-contact 1) :value))]
 					[:td.brdr              (hf/label :xx (:note x))]])
-			(db/get-members))]))
+			(sort-by #(Integer/valueOf (utils/scrub-id (:_id %))) (db/get-members)))]))
 
 (s/def :exp/estate-ga* (s/keys :req-un [:estate/_id :estate/location :estate/address :fiber/from-to :estate/interval]))
 
@@ -92,20 +92,22 @@
 (defn get-all
 	[]
 	{:post [(utils/q-valid? (s/* :exp/estate-ga) %)]}
-	(flatten 
-		(for [member (db/get-current-members)]
+	(->> (for [member (db/get-current-members)]
 			(for [m-estate (:estates member)
 				:when (-> m-estate :from-to :to nil?)]
-				(assoc member :estate (mk-ga-estate m-estate))))))
+				(assoc member :estate (mk-ga-estate m-estate))))
+		flatten
+		(sort-by #(Integer/valueOf (utils/scrub-id (:_id %))))
+		))
 
 (defn mk-all-lst
 	[]
 	(vec (map (fn [m]
-		[(-> m :_id)
-		 (-> m :from-to :from utils/year-month)
-		 (-> m :name)
+		[(some-> m :_id utils/scrub-id)
+		 (some-> m :from-to :from utils/year-month)
+		 (some-> m :name)
 		 (some-> m :contacts (common/nth-contact 0) :value)
-		 (some-> m :estate :_id)
+		 (some-> m :estate :_id utils/scrub-id)
 		 (some-> m :estate :location)
 		 (some-> m :estate :address)
 		 (some-> m :estate :interval name)
@@ -135,11 +137,11 @@
 			]
 			(map (fn [m]
 				[:tr
-					[:td.rafield.rpad.brdr (hf/label :xx (-> (utils/spy m) :_id))]
-					[:td.dcol.brdr         (hf/label :xx (-> m :from-to :from utils/year-month))]
-					[:td.txtcol.brdr       (hf/label :xx (-> m :name))]
+					[:td.rafield.rpad.brdr (hf/label :xx (some-> m :_id utils/scrub-id))]
+					[:td.dcol.brdr         (hf/label :xx (some-> m :from-to :from utils/year-month))]
+					[:td.txtcol.brdr       (hf/label :xx (some-> m :name))]
 					[:td.brdr.ccol         (hf/label :xx (some-> m :contacts (common/nth-contact 0) :value))]
-					[:td.rafield.rpad.brdr (hf/label :xx (some-> m :estate :_id))]
+					[:td.rafield.rpad.brdr (hf/label :xx (some-> m :estate :_id utils/scrub-id))]
 					[:td.txtcol.brdr       (hf/label :xx (some-> m :estate :location))]
 					[:td.txtcol.brdr       (hf/label :xx (some-> m :estate :address))]
 					[:td.rafield.rpad.brdr (hf/label :xx (some-> m :estate :interval name))]

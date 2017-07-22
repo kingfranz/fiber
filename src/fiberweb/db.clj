@@ -49,7 +49,8 @@
 	[mc-func caller tbl & args]
 	(log/trace (apply str caller ": " (fname mc-func) " " tbl " " (first args)))
 	(let [ret (apply mc-func fiberdb tbl (first args))]
-		(log/trace caller "returned:" (pr-str ret))
+		(let [ret-str (pr-str ret)]
+			(log/trace caller "returned:" (if (> (count ret-str) 1000) "*** TOO LONG ***" ret-str)))
 		ret))
 
 (defn mc-aggregate
@@ -234,7 +235,7 @@
 (defn update-member
 	[member]
 	{:pre [(utils/q-valid? :fiber/member member)]}
-	(mc-update-by-id members (:_id member)
+	(mc-update-by-id "update-member" members (:_id member)
 		{$set member}))
 
 (defn- upd-member

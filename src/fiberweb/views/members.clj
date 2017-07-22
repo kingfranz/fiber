@@ -21,7 +21,8 @@
             					[util       :as hu])
             	(clojure 		[string     :as str]
             					[set        :as set])
-            	[clojure.spec.alpha :as s]))
+            	(clojure.tools.reader [edn  :as edn])
+            	(clojure.spec 	[alpha      :as s])))
 
 ;;-----------------------------------------------------------------------------
 
@@ -47,7 +48,7 @@
 		(hf/form-to
 			[:post "/update-member"]
 			(hf/hidden-field :_id memberid)
-			(hf/hidden-field :estates (:estates member))
+			(hf/hidden-field :estates (pr-str (:estates member)))
 			[:table
 				[:tr
 					[:td [:a.link-head {:href "/"} "Home"]]
@@ -145,16 +146,20 @@
 
 (defn extract-estates
 	[params]
-	(map #(update % :from-to (common/extract-ft params (:_id %))) (:estates params)))
+	(let [estates-str (:estates params)
+		  m-estates (edn/read-string {:readers {'object #(clj-time.format/parse (nth % 2))}}
+									 estates-str)]
+		(mapv #(assoc % :from-to (common/extract-ft params (:_id %))) m-estates)))
 	     
 (defn extract-contacts
 	[params]
 	{:post [(utils/q-valid? :member/contacts %)]}
 	(->> (range 6)
-		 (map (fn [i] {:type  (some->> i (utils/mk-tag "ctype") (get common/icontact-map) keyword)
-				       :value (some->> i (utils/mk-tag "cvalue") str/trim)
+		 (map (fn [i] {:type  (some->> i (utils/mk-tag "ctype") (get params) (get common/icontact-map) keyword)
+				       :value (some->> i (utils/mk-tag "cvalue") (get params) str/trim)
 					   :preferred (zero? i)}))
-		(remove #(or (nil? (:type %)) (str/blank? (:value %))))))
+		 (remove #(or (nil? (:type %)) (str/blank? (:value %))))
+		 vec))
 
 (defn create-member
 	[{params :params}]
@@ -171,12 +176,12 @@
 	[{params :params}]
 	(let [mid (:_id params)
 		  member (db/get-member mid)]
-		(db/update-member {:_id      mid
+		(db/update-member (assoc member
 						   :name     (str/trim (:name params))
-						   :from-to  (common/extract-ft params "X")
+						   :from-to  (common/extract-ft params mid)
 						   :contacts (extract-contacts params)
 						   :estates  (extract-estates params)
-						   :note     (str/trim (:note params))})))
+						   :note     (str/trim (:note params))))))
 
 (defn choose-estate
 	[memberid]
