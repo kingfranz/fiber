@@ -1,1 +1,0 @@
-[{"_id":{"$date":"2017-02-08T09:48:05.000Z"},"connection-fee":40.0,"connection-tax":10.0,"operator-fee":90.0,"from":{"$date":"2016-01-01T00:00:00.000Z"},"entry-tax":0.0,"operator-tax":22.5,"membership-fee":500.0,"membership-tax":0.0,"entry-fee":25000.0}]
