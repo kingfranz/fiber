@@ -1,0 +1,54 @@
+---------------------------------------------------
+Create the user administrator.
+
+use admin
+db.createUser(
+  {
+    user: "mongoadmin",
+    pwd: "Benq.fp731",
+    roles: [ { role: "userAdminAnyDatabase", db: "admin" } ]
+  }
+)
+
+---------------------------------------------------
+change /etc/mongod.conf
+security:
+    authorization: "enabled"
+
+---------------------------------------------------
+Re-start the MongoDB instance with access control
+
+mongo -u "mongoadmin" -p "Benq.fp731" --authenticationDatabase "admin"
+
+---------------------------------------------------
+Create the new user.
+
+use fiberdb
+db.createUser(
+    {
+      user: "fiberuser",
+      pwd: "kAllE.kUlA399",
+      roles: [
+         { role: "readWrite", db: "fiberdb" }
+      ]
+    }
+)
+
+---------------------------------------------------
+import the json data
+
+mongoimport -u "fiberuser" -p "kAllE.kUlA399" --authenticationDatabase "fiberdb" --db "fiberdb" --drop --jsonArray --file estates.json
+
+mongoimport -u "fiberuser" -p "kAllE.kUlA399" --authenticationDatabase "fiberdb" --db "fiberdb" --drop --jsonArray --file members.json
+
+mongoimport -u "fiberuser" -p "kAllE.kUlA399" --authenticationDatabase "fiberdb" --db "fiberdb" --drop --jsonArray --file configs.json
+
+
+---------------------------------------------------
+import the json data
+
+mongoexport -u "fiberuser" -p "kAllE.kUlA399" --authenticationDatabase "fiberdb" --db "fiberdb" --jsonArray --collection "estates" --out estates.json
+
+mongoexport -u "fiberuser" -p "kAllE.kUlA399" --authenticationDatabase "fiberdb" --db "fiberdb" --jsonArray --collection "members" --out members.json
+
+mongoexport -u "fiberuser" -p "kAllE.kUlA399" --authenticationDatabase "fiberdb" --db "fiberdb" --jsonArray --collection "configs" --out configs.json

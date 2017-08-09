@@ -41,12 +41,12 @@
 		rmst/wrap-stacktrace
 		(rmd/wrap-defaults (assoc-in rmd/site-defaults [:security :anti-forgery] false))))
 
-(defn start
-	[port]
-  	(ring/run-jetty application {:port port
-                                 :join? false}))
+;(defn start
+;	[port]
+;  	(ring/run-jetty application {:port port
+;                                 :join? false}))
 
-(defn -main
-	[]
-	(println "startar webservern på port 3210")
-  	(start 3210))
+;(defn -main
+;	[]
+;	(println "startar webservern på port 3210")
+;  	(start 3210))
