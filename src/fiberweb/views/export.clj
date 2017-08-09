@@ -137,19 +137,11 @@
 			]
 			(map (fn [m]
 				[:tr
-<<<<<<< HEAD
 					[:td.rafield.rpad.brdr (hf/label :xx (some-> m :_id utils/scrub-id))]
 					[:td.dcol.brdr         (hf/label :xx (some-> m :from-to :from utils/year-month))]
 					[:td.txtcol.brdr       (hf/label :xx (some-> m :name))]
 					[:td.brdr.ccol         (hf/label :xx (some-> m :contacts (common/nth-contact 0) :value))]
 					[:td.rafield.rpad.brdr (hf/label :xx (some-> m :estate :_id utils/scrub-id))]
-=======
-					[:td.rafield.rpad.brdr (hf/label :xx (-> (utils/spy m) :_id))]
-					[:td.dcol.brdr         (hf/label :xx (-> m :from-to :from utils/year-month))]
-					[:td.txtcol.brdr       (hf/label :xx (-> m :name))]
-					[:td.brdr.ccol         (hf/label :xx (some-> m :contacts (common/nth-contact 0) :value))]
-					[:td.rafield.rpad.brdr (hf/label :xx (some-> m :estate :_id))]
->>>>>>> bab448c... changed contacts
 					[:td.txtcol.brdr       (hf/label :xx (some-> m :estate :location))]
 					[:td.txtcol.brdr       (hf/label :xx (some-> m :estate :address))]
 					[:td.rafield.rpad.brdr (hf/label :xx (some-> m :estate :interval name))]
